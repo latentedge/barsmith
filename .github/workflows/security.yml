@@ -1,0 +1,29 @@
+name: security
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Mondays 07:00 UTC
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure ignored optional bincode advisory stays inactive
+        run: |
+          if cargo tree -i bincode -e features | grep -q '^bincode '; then
+            echo "::error::bincode is active in the resolved feature graph; remove the RustSec ignore or eliminate the dependency path."
+            cargo tree -i bincode -e features
+            exit 1
+          fi
+
+      - name: Dependency audit (RustSec)
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

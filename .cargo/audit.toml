@@ -1,0 +1,20 @@
+[advisories]
+# Configuration for `cargo audit` (RustSec).
+#
+# If you need to temporarily ignore an advisory:
+# 1) Prefer upgrading via `cargo update -p <crate>`.
+# 2) If unavoidable, add the RustSec ID to `ignore` with a rationale,
+#    dependency path, mitigation, and revisit trigger.
+ignore = [
+    # RUSTSEC-2025-0141: `bincode` 2.0.1 is marked unmaintained.
+    # Path: optional `polars-utils` serde support in Polars 0.53 metadata.
+    # Status: `cargo tree -i bincode -e features` prints nothing after the
+    # Polars feature tightening, so Barsmith's active build graph does not
+    # enable this optional dependency. `cargo audit` still scans it because it
+    # remains present in Cargo.lock through upstream optional Polars metadata.
+    # Mitigation: keep Polars defaults disabled and keep CSV/Parquet features
+    # explicit; fail CI if `bincode` becomes active in `cargo tree`.
+    # Revisit: remove when Polars removes or replaces the optional dependency,
+    # or when cargo-audit gains feature-aware advisory filtering for this path.
+    "RUSTSEC-2025-0141",
+]

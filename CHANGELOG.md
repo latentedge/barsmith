@@ -1,0 +1,25 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on Keep a Changelog, and this project aims to follow Semantic Versioning.
+
+## Unreleased
+
+- Removed unsupported `--logic` / `--logic-mode` options and the internal `LogicMode` enum; feature combinations are AND-only.
+- Removed unused `--early-exit-when-reused` CLI/config surface.
+- Added `run_manifest.json` and run-identity checks to reject unsafe resume across incompatible CSV/config/catalog changes.
+- Allowed deterministic `--max-depth` extension for matching run identities.
+- Applied `--min-samples-report` to final top-result queries.
+- Wrote Parquet result batches through a temporary file before atomic rename.
+- Added fixture-tier docs, golden smoke, and benchmark smoke scripts.
+- Refactored bitset scanning, stats metrics, batch/subset pruning, and custom target geometry into dedicated modules with focused tests.
+- Split large private unit-test modules out of production files to improve maintainability without changing runtime behavior.
+- Expanded open-source documentation for stability, testing, performance review, migration, and contributor workflows.
+- Documented first-party unsafe Rust usage and review policy.
+- Upgraded the Polars/DuckDB dependency stack, removed the transitive `fast-float` RustSec warning, tightened Polars features, and documented the remaining cargo-audit exception for inactive optional Polars `bincode` metadata.
+- Runs the RustSec security workflow on push and pull requests in addition to the weekly schedule.
+
+## 0.1.0
+
+- Initial public-ready repository structure (CLI, core library, built-in feature engineering, CI).

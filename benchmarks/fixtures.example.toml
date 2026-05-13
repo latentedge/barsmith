@@ -1,0 +1,26 @@
+# Copy this file to benchmarks/local-fixtures.toml and edit local-only paths.
+# Do not commit local-fixtures.toml or raw Tier C benchmark data.
+
+[tier_a]
+name = "tiny smoke"
+path = "tests/data/ohlcv_tiny.csv"
+commit_raw_data = true
+purpose = "fast CLI and unit smoke checks"
+
+[tier_b]
+name = "ES 30m sample"
+path = "tests/data/es_30m_sample.csv"
+commit_raw_data = true
+purpose = "realistic golden-output and parity checks"
+
+[[tier_c]]
+name = "ES 30m 50k local perf slice"
+path = "../algotrade/tmp/perf/es_30m_50k.csv"
+commit_raw_data = false
+purpose = "local release-mode performance gate"
+
+[[tier_c]]
+name = "prior prepared Barsmith outputs"
+path = "../algotrade/barsmith/tmp"
+commit_raw_data = false
+purpose = "manual schema, resume, and top-results investigation"
