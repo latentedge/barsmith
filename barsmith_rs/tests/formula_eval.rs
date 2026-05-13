@@ -8,6 +8,8 @@ use barsmith_rs::formula_eval::{
     run_formula_evaluation,
 };
 use barsmith_rs::frs::FrsOptions;
+use barsmith_rs::protocol::ResearchStage;
+use barsmith_rs::selection::{SelectionMode, SelectionPolicy};
 use chrono::NaiveDate;
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -50,6 +52,21 @@ fn request(stacking_mode: StackingMode) -> FormulaEvalRequest {
         frs_enabled: true,
         frs_scope: FrsScope::All,
         frs_options: FrsOptions::default(),
+        selection_mode: SelectionMode::HoldoutConfirm,
+        selection_policy: SelectionPolicy {
+            candidate_top_k: 100,
+            pre_min_trades: 1,
+            post_min_trades: 1,
+            post_warn_below_trades: 1,
+            min_pre_frs: Some(0.0),
+            max_return_degradation: None,
+            purge_cross_boundary_exits: false,
+            ..SelectionPolicy::default()
+        },
+        stage: ResearchStage::Validation,
+        strict_protocol: None,
+        overfit_options: None,
+        stress_options: None,
     }
 }
 
@@ -64,6 +81,7 @@ fn formula_eval_splits_pre_post_and_attaches_frs() {
     assert!(report.post.results.iter().all(|row| row.frs.is_some()));
     assert!(!report.frs_rows.is_empty());
     assert!(!report.frs_window_rows.is_empty());
+    assert!(report.selection.is_some());
 }
 
 #[test]
@@ -107,4 +125,22 @@ fn equity_curve_export_uses_ranked_window_selection() {
     assert!(rows.iter().all(|row| row.equity_dollar.is_some()));
     assert!(rows.iter().any(|row| row.window == "pre"));
     assert!(rows.iter().any(|row| row.window == "post"));
+}
+
+#[test]
+fn window_guards_report_embargo_and_cross_boundary_purge() {
+    let mut req = request(StackingMode::NoStacking);
+    req.selection_mode = SelectionMode::Off;
+    req.selection_policy.embargo_bars = 1;
+    req.selection_policy.purge_cross_boundary_exits = true;
+
+    let report = run_formula_evaluation(&req).unwrap();
+
+    assert_eq!(report.post.guard.rows_after_date_filter, 3);
+    assert_eq!(report.post.guard.embargo_bars_requested, 1);
+    assert_eq!(report.post.guard.embargo_bars_applied, 1);
+    assert_eq!(report.post.rows, 2);
+    assert!(report.pre.guard.cross_boundary_rows_purged > 0);
+    assert!(report.post.guard.cross_boundary_rows_purged > 0);
+    assert!(report.selection.is_none());
 }

@@ -24,6 +24,7 @@ tracing-appender = "0.2.5"
 chrono = { version = "0.4.41", default-features = false, features = ["std"] }
 barsmith_rs = { path = "../barsmith_rs", features = ["simd-eval"] }
 barsmith_builtin = { path = "../barsmith_builtin" }
+custom_rs = { path = "../custom_rs" }
 
 [dev-dependencies]
 tempfile = "3.27"

@@ -110,13 +110,31 @@ runs/artifacts/forward-test/2x_atr_tp_atr_stop/es_30m_official_v2/2024-12-31/<ru
 ```
 
 The forward-test folder includes command metadata, a manifest, result CSV/JSON,
-FRS outputs, equity curves, optional plots under `plots/`, checksums, and
-`reports/summary.md`. The registry record lives under
+selection artifacts, FRS outputs, equity curves, optional plots under `plots/`,
+checksums, and `reports/summary.md`. The registry record lives under
 `runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json` and
-stores formula hashes rather than raw formula text.
+stores formula hashes rather than raw formula text. Selection artifacts include
+`selection_report.json`, `selection_decisions.csv`, `selected_formulas.txt`, and
+`reports/selection.md`.
 
 Equity-curve CSVs and plots are derived from evaluated formula rows after
 scoring, so they do not affect the combination-search hot path or resume state.
+
+The default `holdout-confirm` selection mode chooses from the pre-window rank
+and uses post-window metrics as gates. Use `docs/research-protocol.md` for the
+recommended workflow and lockbox guidance.
+
+For holdout-safe evaluation, the source `comb` run that produced exported
+formulas should also be limited to the discovery/pre window, usually with
+`--date-end <cutoff>`. Exporting candidates from a full-history search leaks the
+post or lockbox period into the candidate set.
+
+Strict protocol runs add `protocol_validation.json`, `overfit_report.json`,
+`stress_report.json`, and human-readable `reports/overfit.md`,
+`reports/stress.md`, or `reports/lockbox.md` when applicable. Registry records
+store protocol hashes, formula-export manifest hashes, stage, lockbox attempt
+status, overfit status, stress status, PBO, PSR, DSR, and effective-trials
+metadata without embedding raw formula text.
 
 ## Date filtering
 

@@ -8,6 +8,7 @@ use std::time::SystemTime;
 use anyhow::{Context, Result, anyhow};
 use barsmith_rs::config::Config;
 use barsmith_rs::formula_eval::{FormulaEvaluationReport, FormulaResult};
+use barsmith_rs::protocol::ResearchStage;
 use barsmith_rs::storage::{ResultQuery, ResultRankBy, ResultRow, query_result_store};
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
@@ -111,8 +112,18 @@ struct ForwardManifest<'a> {
     rank_by: String,
     frs_enabled: bool,
     frs_scope: String,
+    selection_mode: String,
+    candidate_top_k: usize,
+    purge_cross_boundary_exits: bool,
+    embargo_bars: usize,
     plot_enabled: bool,
     plot_mode: String,
+    stage: ResearchStage,
+    strict_protocol: bool,
+    protocol_sha256: Option<String>,
+    formula_export_manifest_sha256: Option<String>,
+    overfit_status: Option<String>,
+    stress_status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +146,23 @@ struct ForwardRegistryRecord<'a> {
     top_pre_calmar: Option<ForwardTopResultRecord>,
     top_post_ranked: Option<ForwardTopResultRecord>,
     top_post_total_r: Option<ForwardTopResultRecord>,
+    selected_formula_sha256: Option<String>,
+    selected_pre_rank: Option<usize>,
+    selected_post_rank: Option<usize>,
+    selection_status: Option<String>,
+    diagnostic_top_post_formula_sha256: Option<String>,
+    stage: ResearchStage,
+    strict_protocol: bool,
+    protocol_sha256: Option<String>,
+    formula_export_manifest_sha256: Option<String>,
+    lockbox_attempt_number: Option<usize>,
+    lockbox_status: Option<String>,
+    overfit_status: Option<String>,
+    stress_status: Option<String>,
+    pbo: Option<f64>,
+    dsr: Option<f64>,
+    psr: Option<f64>,
+    effective_trials: Option<usize>,
     checksum_file: String,
     artifact_files: Vec<String>,
 }
@@ -330,12 +358,36 @@ pub fn apply_forward_output_defaults(args: &mut EvalFormulasArgs, plan: &Standar
         .get_or_insert_with(|| plan.output_dir.join("formula_results.csv"));
     args.json_out
         .get_or_insert_with(|| plan.output_dir.join("formula_results.json"));
+    if args.selection_mode.to_mode().is_enabled() && !args.stage.to_stage().is_lockbox_like() {
+        args.selection_out
+            .get_or_insert_with(|| plan.output_dir.join("selection_report.json"));
+        args.selection_decisions_out
+            .get_or_insert_with(|| plan.output_dir.join("selection_decisions.csv"));
+        args.selected_formulas_out
+            .get_or_insert_with(|| plan.output_dir.join("selected_formulas.txt"));
+    }
+    if args.strict_protocol {
+        args.protocol_validation_out
+            .get_or_insert_with(|| plan.output_dir.join("protocol_validation.json"));
+    }
 
     if !args.no_frs {
         args.frs_out
             .get_or_insert_with(|| plan.output_dir.join("frs_summary.csv"));
         args.frs_windows_out
             .get_or_insert_with(|| plan.output_dir.join("frs_windows.csv"));
+    }
+    if args.strict_protocol || args.overfit_report {
+        args.overfit_out
+            .get_or_insert_with(|| plan.output_dir.join("overfit_report.json"));
+        args.overfit_decisions_out
+            .get_or_insert_with(|| plan.output_dir.join("overfit_decisions.csv"));
+    }
+    if args.strict_protocol || args.stress_report {
+        args.stress_out
+            .get_or_insert_with(|| plan.output_dir.join("stress_report.json"));
+        args.stress_matrix_out
+            .get_or_insert_with(|| plan.output_dir.join("stress_matrix.csv"));
     }
 
     if args.equity_curves_top_k > 0 {
@@ -452,22 +504,37 @@ pub fn write_forward_closeout_files(
     let completed_at = now_iso();
     let prepared_sha256 = sha256_file(&args.prepared_path)?;
     let formulas_sha256 = sha256_file(&args.formulas_path)?;
+    let mut closeout_files = written_files.to_vec();
+    if let Some(path) = write_forward_selection_markdown(plan, report)? {
+        closeout_files.push(path);
+    }
+    if let Some(path) = write_overfit_markdown(plan, report)? {
+        closeout_files.push(path);
+    }
+    if let Some(path) = write_stress_markdown(plan, report)? {
+        closeout_files.push(path);
+    }
+    if let Some(path) = write_lockbox_markdown(plan, report)? {
+        closeout_files.push(path);
+    }
 
     write_forward_manifest(
         plan,
         args,
+        report,
         &completed_at,
         &prepared_sha256,
         &formulas_sha256,
     )?;
-    write_forward_summary(plan, args, report, written_files, &completed_at)?;
-    let checksums = write_forward_checksums(plan, written_files)?;
+    write_forward_summary(plan, args, report, &closeout_files, &completed_at)?;
+    let checksums = write_forward_checksums(plan, &closeout_files)?;
+    let lockbox_attempt_number = lockbox_attempt_number(plan, args, report)?;
 
     if let Some(registry_dir) = &plan.registry_dir {
         fs::create_dir_all(registry_dir)
             .with_context(|| format!("failed to create {}", registry_dir.display()))?;
 
-        let artifact_files = written_files
+        let artifact_files = closeout_files
             .iter()
             .filter_map(|path| relative_to(&plan.output_dir, path))
             .collect::<Vec<_>>();
@@ -498,6 +565,59 @@ pub fn write_forward_closeout_files(
                 }),
                 top_post_total_r: best_total_return(&report.post.results)
                     .map(|row| forward_top_result_record("post sorted by total_return_r", row)),
+                selected_formula_sha256: report
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.selected.as_ref())
+                    .map(|selected| sha256_text(&selected.formula)),
+                selected_pre_rank: report
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.selected.as_ref())
+                    .map(|selected| selected.pre_rank),
+                selected_post_rank: report
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.selected.as_ref())
+                    .and_then(|selected| selected.post_rank),
+                selection_status: report
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.selected.as_ref())
+                    .map(|selected| format!("{:?}", selected.status)),
+                diagnostic_top_post_formula_sha256: report
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.diagnostic_top_post.as_ref())
+                    .map(|diagnostic| sha256_text(&diagnostic.formula)),
+                stage: report.stage,
+                strict_protocol: report
+                    .strict_protocol
+                    .as_ref()
+                    .map(|validation| validation.strict)
+                    .unwrap_or(false),
+                protocol_sha256: report
+                    .strict_protocol
+                    .as_ref()
+                    .and_then(|validation| validation.protocol_sha256.clone()),
+                formula_export_manifest_sha256: report
+                    .strict_protocol
+                    .as_ref()
+                    .and_then(|validation| validation.formula_export_manifest_sha256.clone()),
+                lockbox_attempt_number,
+                lockbox_status: lockbox_status(report, lockbox_attempt_number),
+                overfit_status: report
+                    .overfit
+                    .as_ref()
+                    .map(|row| format!("{:?}", row.status)),
+                stress_status: report
+                    .stress
+                    .as_ref()
+                    .map(|row| format!("{:?}", row.status)),
+                pbo: report.overfit.as_ref().and_then(|row| row.pbo),
+                dsr: report.overfit.as_ref().and_then(|row| row.dsr),
+                psr: report.overfit.as_ref().and_then(|row| row.psr),
+                effective_trials: report.overfit.as_ref().map(|row| row.effective_trials),
                 checksum_file: checksums
                     .strip_prefix(&plan.output_dir)
                     .unwrap_or(&checksums)
@@ -515,6 +635,7 @@ pub fn write_forward_closeout_files(
 fn write_forward_manifest(
     plan: &StandardOutputPlan,
     args: &EvalFormulasArgs,
+    report: &FormulaEvaluationReport,
     completed_at: &str,
     prepared_sha256: &str,
     formulas_sha256: &str,
@@ -537,10 +658,309 @@ fn write_forward_manifest(
         rank_by: format!("{:?}", args.rank_by),
         frs_enabled: !args.no_frs,
         frs_scope: format!("{:?}", args.frs_scope),
+        selection_mode: format!("{:?}", args.selection_mode),
+        candidate_top_k: args.candidate_top_k,
+        purge_cross_boundary_exits: !args.no_purge_cross_boundary_exits,
+        embargo_bars: args.embargo_bars,
         plot_enabled: args.plot,
         plot_mode: format!("{:?}", args.plot_mode),
+        stage: report.stage,
+        strict_protocol: report
+            .strict_protocol
+            .as_ref()
+            .map(|validation| validation.strict)
+            .unwrap_or(false),
+        protocol_sha256: report
+            .strict_protocol
+            .as_ref()
+            .and_then(|validation| validation.protocol_sha256.clone()),
+        formula_export_manifest_sha256: report
+            .strict_protocol
+            .as_ref()
+            .and_then(|validation| validation.formula_export_manifest_sha256.clone()),
+        overfit_status: report
+            .overfit
+            .as_ref()
+            .map(|row| format!("{:?}", row.status)),
+        stress_status: report
+            .stress
+            .as_ref()
+            .map(|row| format!("{:?}", row.status)),
     };
     write_json_atomic(&plan.output_dir.join("run_manifest.json"), &manifest)
+}
+
+fn write_forward_selection_markdown(
+    plan: &StandardOutputPlan,
+    report: &FormulaEvaluationReport,
+) -> Result<Option<PathBuf>> {
+    let Some(selection) = &report.selection else {
+        return Ok(None);
+    };
+
+    let mut body = String::new();
+    body.push_str("# Barsmith Selection Report\n\n");
+    body.push_str(&format!("- Mode: `{:?}`\n", selection.mode));
+    body.push_str(&format!(
+        "- Candidate cap: `{}`\n",
+        selection.policy.candidate_top_k
+    ));
+    body.push_str(&format!(
+        "- Pre trade floor: `{}`\n",
+        selection.policy.pre_min_trades
+    ));
+    body.push_str(&format!(
+        "- Post trade floor: `{}`\n",
+        selection.policy.post_min_trades
+    ));
+    body.push_str(&format!(
+        "- Post trade warning floor: `{}`\n",
+        selection.policy.post_warn_below_trades
+    ));
+    body.push_str(&format!(
+        "- Purge cross-boundary exits: `{}`\n",
+        selection.policy.purge_cross_boundary_exits
+    ));
+    body.push_str(&format!(
+        "- Embargo bars: `{}`\n\n",
+        selection.policy.embargo_bars
+    ));
+
+    body.push_str("## Decision\n\n");
+    if let Some(selected) = &selection.selected {
+        body.push_str(&format!(
+            "- Selected formula SHA-256: `{}`\n",
+            sha256_text(&selected.formula)
+        ));
+        body.push_str(&format!("- Source rank: `{}`\n", selected.source_rank));
+        body.push_str(&format!("- Pre rank: `{}`\n", selected.pre_rank));
+        body.push_str(&format!(
+            "- Post rank: `{}`\n",
+            selected
+                .post_rank
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+        body.push_str(&format!("- Pre trades: `{}`\n", selected.pre_trades));
+        body.push_str(&format!(
+            "- Post trades: `{}`\n",
+            selected
+                .post_trades
+                .map(|trades| trades.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+        body.push_str(&format!("- Pre Total R: `{:.4}`\n", selected.pre_total_r));
+        body.push_str(&format!(
+            "- Post Total R: `{}`\n",
+            selected
+                .post_total_r
+                .map(|value| format!("{value:.4}"))
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+        body.push('\n');
+        body.push_str("```text\n");
+        body.push_str(&selected.formula);
+        body.push_str("\n```\n");
+    } else {
+        body.push_str("No formula passed the configured selection gates.\n");
+    }
+
+    if let Some(diagnostic) = &selection.diagnostic_top_post {
+        body.push_str("\n## Diagnostic Top Post\n\n");
+        body.push_str(&format!(
+            "- Formula SHA-256: `{}`\n",
+            sha256_text(&diagnostic.formula)
+        ));
+        body.push_str(&format!("- Post rank: `{}`\n", diagnostic.post_rank));
+        body.push_str(&format!(
+            "- Post Total R: `{:.4}`\n",
+            diagnostic.post_total_r
+        ));
+        body.push_str(
+            "- Note: this is a diagnostic row only unless `selection-mode` is `validation-rank`.\n",
+        );
+    }
+
+    if !selection.warnings.is_empty() {
+        body.push_str("\n## Warnings\n\n");
+        for warning in &selection.warnings {
+            body.push_str(&format!("- {warning}\n"));
+        }
+    }
+
+    body.push_str("\n## Candidate Decisions\n\n");
+    body.push_str("| Pre Rank | Post Rank | Status | Reasons | Formula SHA-256 |\n");
+    body.push_str("| ---: | ---: | --- | --- | --- |\n");
+    for decision in &selection.decisions {
+        let post_rank = decision
+            .post_rank
+            .map(|rank| rank.to_string())
+            .unwrap_or_else(|| "n/a".to_string());
+        let reasons = if decision.reasons.is_empty() {
+            "pass".to_string()
+        } else {
+            decision
+                .reasons
+                .iter()
+                .map(|reason| reason.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        body.push_str(&format!(
+            "| {} | {} | `{:?}` | {} | `{}` |\n",
+            decision.pre_rank,
+            post_rank,
+            decision.status,
+            reasons,
+            sha256_text(&decision.formula)
+        ));
+    }
+
+    let path = plan.output_dir.join("reports").join("selection.md");
+    fs::write(&path, body).with_context(|| "failed to write reports/selection.md")?;
+    Ok(Some(path))
+}
+
+fn write_overfit_markdown(
+    plan: &StandardOutputPlan,
+    report: &FormulaEvaluationReport,
+) -> Result<Option<PathBuf>> {
+    let Some(overfit) = &report.overfit else {
+        return Ok(None);
+    };
+    let mut body = String::new();
+    body.push_str("# Barsmith Overfit Diagnostics\n\n");
+    body.push_str(&format!("- Status: `{:?}`\n", overfit.status));
+    body.push_str(&format!(
+        "- Candidate count: `{}`\n",
+        overfit.candidate_count
+    ));
+    body.push_str(&format!(
+        "- Effective trials: `{}`\n",
+        overfit.effective_trials
+    ));
+    body.push_str(&format!(
+        "- CSCV blocks: `{}` of requested `{}`\n",
+        overfit.cscv_blocks_applied, overfit.cscv_blocks_requested
+    ));
+    body.push_str(&format!("- CSCV splits: `{}`\n", overfit.cscv_splits));
+    body.push_str(&format!("- PBO: `{}`\n", optional_metric(overfit.pbo)));
+    body.push_str(&format!("- PSR: `{}`\n", optional_metric(overfit.psr)));
+    body.push_str(&format!("- DSR: `{}`\n", optional_metric(overfit.dsr)));
+    body.push_str(&format!(
+        "- Positive block ratio: `{}`\n",
+        optional_metric(overfit.selected_positive_window_ratio)
+    ));
+    if let Some(hash) = overfit.selected_formula_sha256.as_deref() {
+        body.push_str(&format!("- Selected formula SHA-256: `{hash}`\n"));
+    }
+    if !overfit.warnings.is_empty() {
+        body.push_str("\n## Warnings\n\n");
+        for warning in &overfit.warnings {
+            body.push_str(&format!("- {warning}\n"));
+        }
+    }
+    body.push_str("\n## CSCV Decisions\n\n");
+    body.push_str("| Split | Test Rank | Percentile | Logit | Overfit | Formula SHA-256 |\n");
+    body.push_str("| ---: | ---: | ---: | ---: | --- | --- |\n");
+    for decision in &overfit.decisions {
+        body.push_str(&format!(
+            "| {} | {} | {:.4} | {:.4} | `{}` | `{}` |\n",
+            decision.split_index,
+            decision.test_rank,
+            decision.test_percentile,
+            decision.logit,
+            decision.overfit,
+            sha256_text(&decision.selected_formula)
+        ));
+    }
+
+    let path = plan.output_dir.join("reports").join("overfit.md");
+    fs::write(&path, body).with_context(|| "failed to write reports/overfit.md")?;
+    Ok(Some(path))
+}
+
+fn write_stress_markdown(
+    plan: &StandardOutputPlan,
+    report: &FormulaEvaluationReport,
+) -> Result<Option<PathBuf>> {
+    let Some(stress) = &report.stress else {
+        return Ok(None);
+    };
+    let mut body = String::new();
+    body.push_str("# Barsmith Stress Diagnostics\n\n");
+    body.push_str(&format!("- Status: `{:?}`\n", stress.status));
+    if let Some(hash) = stress.selected_formula_sha256.as_deref() {
+        body.push_str(&format!("- Selected formula SHA-256: `{hash}`\n"));
+    }
+    body.push_str("\n## Scenarios\n\n");
+    body.push_str("| Scenario | Cost Multiplier | Extra R | Extra $ | Max Contracts | Post Total R | Post Expectancy | Pass |\n");
+    body.push_str("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    for scenario in &stress.scenarios {
+        let max_contracts = scenario
+            .max_contracts_override
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "base".to_string());
+        body.push_str(&format!(
+            "| `{}` | {:.2} | {:.4} | {:.2} | {} | {:.4} | {:.4} | `{}` |\n",
+            scenario.scenario,
+            scenario.cost_multiplier,
+            scenario.extra_cost_per_trade_r,
+            scenario.extra_cost_per_trade_dollar,
+            max_contracts,
+            scenario.post_total_r,
+            scenario.post_expectancy,
+            scenario.pass
+        ));
+    }
+    if !stress.warnings.is_empty() {
+        body.push_str("\n## Warnings\n\n");
+        for warning in &stress.warnings {
+            body.push_str(&format!("- {warning}\n"));
+        }
+    }
+
+    let path = plan.output_dir.join("reports").join("stress.md");
+    fs::write(&path, body).with_context(|| "failed to write reports/stress.md")?;
+    Ok(Some(path))
+}
+
+fn write_lockbox_markdown(
+    plan: &StandardOutputPlan,
+    report: &FormulaEvaluationReport,
+) -> Result<Option<PathBuf>> {
+    if !report.stage.is_lockbox_like() {
+        return Ok(None);
+    }
+    let mut body = String::new();
+    body.push_str("# Barsmith Lockbox Report\n\n");
+    body.push_str(&format!("- Stage: `{}`\n", report.stage.as_str()));
+    body.push_str("- Lockbox evaluates one frozen formula and does not select among candidates.\n");
+    if let Some(row) = report.post.results.first() {
+        body.push_str(&format!(
+            "- Formula SHA-256: `{}`\n",
+            sha256_text(&row.formula)
+        ));
+        body.push_str(&format!("- Post trades: `{}`\n", row.trades));
+        body.push_str(&format!(
+            "- Post Total R: `{:.4}`\n",
+            row.stats.total_return
+        ));
+        body.push_str(&format!(
+            "- Post expectancy: `{:.4}`\n",
+            row.stats.expectancy
+        ));
+        body.push_str(&format!(
+            "- Post max drawdown R: `{:.4}`\n",
+            row.stats.max_drawdown
+        ));
+    } else {
+        body.push_str("No lockbox result survived the configured filters.\n");
+    }
+
+    let path = plan.output_dir.join("reports").join("lockbox.md");
+    fs::write(&path, body).with_context(|| "failed to write reports/lockbox.md")?;
+    Ok(Some(path))
 }
 
 fn write_forward_summary(
@@ -568,6 +988,15 @@ fn write_forward_summary(
         summary.push_str(&format!("- Artifact URI: `{uri}`\n"));
     }
     summary.push_str(&format!("- Rank metric: `{:?}`\n", args.rank_by));
+    summary.push_str(&format!("- Stage: `{}`\n", report.stage.as_str()));
+    summary.push_str(&format!(
+        "- Strict protocol: `{}`\n",
+        report
+            .strict_protocol
+            .as_ref()
+            .map(|validation| validation.strict)
+            .unwrap_or(false)
+    ));
     summary.push_str(&format!("- FRS enabled: `{}`\n", !args.no_frs));
     summary.push_str(&format!(
         "- Position sizing: `{:?}`\n",
@@ -596,6 +1025,9 @@ fn write_forward_summary(
         "post sorted by total_return_r",
         best_total_return(&report.post.results),
     );
+    push_selection_summary(&mut summary, report);
+    push_overfit_summary(&mut summary, report);
+    push_stress_summary(&mut summary, report);
 
     let relative_files = written_files
         .iter()
@@ -610,6 +1042,113 @@ fn write_forward_summary(
 
     fs::write(plan.output_dir.join("reports").join("summary.md"), summary)
         .with_context(|| "failed to write reports/summary.md")
+}
+
+fn push_selection_summary(summary: &mut String, report: &FormulaEvaluationReport) {
+    summary.push_str("\n## Selection Decision\n\n");
+    let Some(selection) = &report.selection else {
+        summary.push_str("Selection mode was disabled.\n");
+        return;
+    };
+    summary.push_str(&format!("- Mode: `{:?}`\n", selection.mode));
+    summary.push_str(&format!(
+        "- Candidate cap: `{}`\n",
+        selection.policy.candidate_top_k
+    ));
+    summary.push_str(&format!(
+        "- Purge cross-boundary exits: `{}`\n",
+        selection.policy.purge_cross_boundary_exits
+    ));
+    summary.push_str(&format!(
+        "- Embargo bars: `{}`\n",
+        selection.policy.embargo_bars
+    ));
+    if let Some(selected) = &selection.selected {
+        summary.push_str(&format!(
+            "- Selected formula SHA-256: `{}`\n",
+            sha256_text(&selected.formula)
+        ));
+        summary.push_str(&format!("- Pre rank: `{}`\n", selected.pre_rank));
+        summary.push_str(&format!(
+            "- Post rank: `{}`\n",
+            selected
+                .post_rank
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+        summary.push_str(&format!("- Pre Total R: `{:.4}`\n", selected.pre_total_r));
+        summary.push_str(&format!(
+            "- Post Total R: `{}`\n",
+            selected
+                .post_total_r
+                .map(|value| format!("{value:.4}"))
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+    } else {
+        summary.push_str("No formula passed the configured selection gates.\n");
+    }
+    if let Some(diagnostic) = &selection.diagnostic_top_post {
+        summary.push_str(&format!(
+            "- Diagnostic top-post formula SHA-256: `{}`\n",
+            sha256_text(&diagnostic.formula)
+        ));
+        summary.push_str(
+            "- Diagnostic note: this row is not the selected strategy in holdout mode.\n",
+        );
+    }
+    for warning in &selection.warnings {
+        summary.push_str(&format!("- Warning: `{warning}`\n"));
+    }
+}
+
+fn push_overfit_summary(summary: &mut String, report: &FormulaEvaluationReport) {
+    let Some(overfit) = &report.overfit else {
+        return;
+    };
+    summary.push_str("\n## Overfit Diagnostics\n\n");
+    summary.push_str(&format!("- Status: `{:?}`\n", overfit.status));
+    summary.push_str(&format!("- Candidates: `{}`\n", overfit.candidate_count));
+    summary.push_str(&format!(
+        "- Effective trials: `{}`\n",
+        overfit.effective_trials
+    ));
+    summary.push_str(&format!("- CSCV splits: `{}`\n", overfit.cscv_splits));
+    summary.push_str(&format!("- PBO: `{}`\n", optional_metric(overfit.pbo)));
+    summary.push_str(&format!("- PSR: `{}`\n", optional_metric(overfit.psr)));
+    summary.push_str(&format!("- DSR: `{}`\n", optional_metric(overfit.dsr)));
+    summary.push_str(&format!(
+        "- Positive block ratio: `{}`\n",
+        optional_metric(overfit.selected_positive_window_ratio)
+    ));
+    for warning in &overfit.warnings {
+        summary.push_str(&format!("- Warning: `{warning}`\n"));
+    }
+}
+
+fn push_stress_summary(summary: &mut String, report: &FormulaEvaluationReport) {
+    let Some(stress) = &report.stress else {
+        return;
+    };
+    summary.push_str("\n## Stress Diagnostics\n\n");
+    summary.push_str(&format!("- Status: `{:?}`\n", stress.status));
+    summary.push_str(&format!("- Scenarios: `{}`\n", stress.scenarios.len()));
+    for scenario in &stress.scenarios {
+        let max_contracts = scenario
+            .max_contracts_override
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "base".to_string());
+        summary.push_str(&format!(
+            "- `{}`: max contracts `{}`, post Total R `{:.4}`, post expectancy `{:.4}`, pass `{}`\n",
+            scenario.scenario,
+            max_contracts,
+            scenario.post_total_r,
+            scenario.post_expectancy,
+            scenario.pass
+        ));
+    }
+    for warning in &stress.warnings {
+        summary.push_str(&format!("- Warning: `{warning}`\n"));
+    }
 }
 
 fn push_forward_result(
@@ -855,6 +1394,107 @@ fn best_total_return(results: &[FormulaResult]) -> Option<&FormulaResult> {
         .max_by(|left, right| left.stats.total_return.total_cmp(&right.stats.total_return))
 }
 
+fn lockbox_attempt_number(
+    plan: &StandardOutputPlan,
+    args: &EvalFormulasArgs,
+    report: &FormulaEvaluationReport,
+) -> Result<Option<usize>> {
+    if !report.stage.is_lockbox_like() {
+        return Ok(None);
+    }
+    let Some(registry_dir) = &plan.registry_dir else {
+        return Ok(None);
+    };
+    let Some(protocol_sha256) = report
+        .strict_protocol
+        .as_ref()
+        .and_then(|validation| validation.protocol_sha256.as_deref())
+    else {
+        return Ok(Some(1));
+    };
+    let Some(formula_sha256) = report
+        .post
+        .results
+        .first()
+        .map(|row| sha256_text(&row.formula))
+    else {
+        return Ok(Some(1));
+    };
+    let previous = count_matching_lockbox_attempts(registry_dir, protocol_sha256, &formula_sha256)?;
+    if previous > 0 && !args.ack_rerun_lockbox {
+        return Err(anyhow!(
+            "lockbox formula/protocol was already evaluated {previous} time(s); pass --ack-rerun-lockbox to record a contaminated rerun"
+        ));
+    }
+    Ok(Some(previous + 1))
+}
+
+fn count_matching_lockbox_attempts(
+    registry_dir: &Path,
+    protocol_sha256: &str,
+    formula_sha256: &str,
+) -> Result<usize> {
+    if !registry_dir.exists() {
+        return Ok(0);
+    }
+    let mut count = 0;
+    let mut stack = vec![registry_dir.to_path_buf()];
+    while let Some(path) = stack.pop() {
+        for entry in
+            fs::read_dir(&path).with_context(|| format!("failed to read {}", path.display()))?
+        {
+            let entry_path = entry?.path();
+            if entry_path.is_dir() {
+                stack.push(entry_path);
+                continue;
+            }
+            if entry_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&entry_path) else {
+                continue;
+            };
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            let is_lockbox = json
+                .get("stage")
+                .and_then(|value| value.as_str())
+                .is_some_and(|stage| stage == "lockbox" || stage == "live-shadow");
+            let same_protocol = json.get("protocol_sha256").and_then(|value| value.as_str())
+                == Some(protocol_sha256);
+            let same_formula = json
+                .get("selected_formula_sha256")
+                .and_then(|value| value.as_str())
+                == Some(formula_sha256);
+            if is_lockbox && same_protocol && same_formula {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
+fn lockbox_status(
+    report: &FormulaEvaluationReport,
+    attempt_number: Option<usize>,
+) -> Option<String> {
+    if !report.stage.is_lockbox_like() {
+        return None;
+    }
+    Some(match attempt_number {
+        Some(1) => "clean_first_attempt".to_string(),
+        Some(_) => "acknowledged_rerun_contaminated".to_string(),
+        None => "not_tracked_no_registry".to_string(),
+    })
+}
+
+fn optional_metric(value: Option<f64>) -> String {
+    value
+        .map(format_metric)
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
 fn relative_to(base: &Path, path: &Path) -> Option<String> {
     path.strip_prefix(base).ok().map(path_for_json)
 }
@@ -1062,6 +1702,7 @@ mod tests {
             csv_path: PathBuf::from("data/ES 30m official.csv"),
             direction: DirectionValue::Long,
             target: "2x_atr_tp_atr_stop".to_string(),
+            engine: crate::cli::EngineValue::Auto,
             output_dir: None,
             runs_root: Some(PathBuf::from("runs/artifacts")),
             dataset_id: Some("ES 30m Official V2".to_string()),

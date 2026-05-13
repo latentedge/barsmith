@@ -17,7 +17,14 @@ use crate::data::ColumnarData;
 use crate::formula::{FormulaClause, FormulaOperator, RankedFormula};
 use crate::frs::{ForwardRobustnessComponents, FrsOptions, compute_frs};
 use crate::mask::MaskCache;
+use crate::overfit::{
+    CscvDecision, OverfitOptions, OverfitReport, ResearchGateStatus, deflated_sharpe_ratio,
+    probabilistic_sharpe_ratio,
+};
+use crate::protocol::{ResearchStage, StrictProtocolValidation, sha256_text};
+use crate::selection::{SelectionMode, SelectionPolicy, SelectionReport, build_selection_report};
 use crate::stats::{EvaluationContext, StatSummary, evaluate_combination_indices};
+use crate::stress::{StressOptions, StressReport, StressScenarioResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RankBy {
@@ -61,6 +68,12 @@ pub struct FormulaEvalRequest {
     pub frs_enabled: bool,
     pub frs_scope: FrsScope,
     pub frs_options: FrsOptions,
+    pub selection_mode: SelectionMode,
+    pub selection_policy: SelectionPolicy,
+    pub stage: ResearchStage,
+    pub strict_protocol: Option<StrictProtocolValidation>,
+    pub overfit_options: Option<OverfitOptions>,
+    pub stress_options: Option<StressOptions>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +84,11 @@ pub struct FormulaEvaluationReport {
     pub cutoff: NaiveDate,
     pub pre: FormulaWindowReport,
     pub post: FormulaWindowReport,
+    pub selection: Option<SelectionReport>,
+    pub stage: ResearchStage,
+    pub strict_protocol: Option<StrictProtocolValidation>,
+    pub overfit: Option<OverfitReport>,
+    pub stress: Option<StressReport>,
     pub frs_rows: Vec<FrsSummaryRow>,
     pub frs_window_rows: Vec<FrsWindowRow>,
 }
@@ -82,7 +100,17 @@ pub struct FormulaWindowReport {
     pub start: Option<NaiveDate>,
     pub end: Option<NaiveDate>,
     pub buy_and_hold: Option<BuyAndHoldSummary>,
+    pub guard: WindowGuardReport,
     pub results: Vec<FormulaResult>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct WindowGuardReport {
+    pub rows_after_date_filter: usize,
+    pub embargo_bars_requested: usize,
+    pub embargo_bars_applied: usize,
+    pub rows_after_embargo: usize,
+    pub cross_boundary_rows_purged: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -168,6 +196,7 @@ struct DateWindow {
     year: Option<i32>,
     start: Option<NaiveDate>,
     end: Option<NaiveDate>,
+    apply_embargo: bool,
 }
 
 #[derive(Debug)]
@@ -213,12 +242,14 @@ pub fn run_formula_evaluation(request: &FormulaEvalRequest) -> Result<FormulaEva
         year: None,
         start: None,
         end: Some(request.cutoff),
+        apply_embargo: false,
     };
     let post_window = DateWindow {
         label: format!(">  {}", request.cutoff),
         year: None,
         start: Some(next_day(request.cutoff)?),
         end: None,
+        apply_embargo: true,
     };
 
     let mut frs_pre = HashMap::new();
@@ -272,6 +303,7 @@ pub fn run_formula_evaluation(request: &FormulaEvalRequest) -> Result<FormulaEva
                     year: None,
                     start: None,
                     end: None,
+                    apply_embargo: false,
                 };
                 let frs_all = compute_frs_for_scope(
                     "all",
@@ -300,6 +332,32 @@ pub fn run_formula_evaluation(request: &FormulaEvalRequest) -> Result<FormulaEva
     let mut post = evaluate_window(&full_data, request, &post_window)?;
     attach_frs(&mut post.results, &frs_post);
     sort_results(&mut post.results, request.rank_by, Some(&previous_ranks));
+    let selection = build_selection_report(
+        request.selection_mode,
+        request.selection_policy,
+        &pre,
+        &post,
+    );
+    let overfit = match &request.overfit_options {
+        Some(options) => Some(compute_overfit_report(
+            &full_data,
+            request,
+            &pre,
+            selection.as_ref(),
+            options,
+        )?),
+        None => None,
+    };
+    let stress = match &request.stress_options {
+        Some(options) => Some(compute_stress_report(
+            &full_data,
+            request,
+            &pre,
+            selection.as_ref(),
+            options,
+        )?),
+        None => None,
+    };
 
     Ok(FormulaEvaluationReport {
         prepared_path: request.prepared_path.clone(),
@@ -308,9 +366,484 @@ pub fn run_formula_evaluation(request: &FormulaEvalRequest) -> Result<FormulaEva
         cutoff: request.cutoff,
         pre,
         post,
+        selection,
+        stage: request.stage,
+        strict_protocol: request.strict_protocol.clone(),
+        overfit,
+        stress,
         frs_rows,
         frs_window_rows,
     })
+}
+
+fn compute_overfit_report(
+    full_data: &ColumnarData,
+    request: &FormulaEvalRequest,
+    pre: &FormulaWindowReport,
+    selection: Option<&SelectionReport>,
+    options: &OverfitOptions,
+) -> Result<OverfitReport> {
+    let mut warnings = Vec::new();
+    let candidates = candidate_formulas(request, pre, options.candidate_top_k);
+    let candidate_count = candidates.len();
+    let effective_trials = options
+        .effective_trials
+        .unwrap_or_else(|| request.formulas.len().max(candidate_count).max(1));
+    let selected_formula = selection
+        .and_then(|selection| selection.selected.as_ref())
+        .map(|selected| selected.formula.clone())
+        .or_else(|| pre.results.first().map(|result| result.formula.clone()));
+
+    if candidate_count < 2 {
+        warnings.push("PBO requires at least two candidate formulas".to_string());
+    }
+
+    let block_windows = chronological_blocks(full_data, options.cscv_blocks)?;
+    if block_windows.len() < 4 {
+        warnings.push("PBO/CSCV requires at least four chronological blocks".to_string());
+    }
+    if block_windows.len() % 2 != 0 {
+        warnings.push(
+            "CSCV uses an even number of applied blocks; the final block was dropped".to_string(),
+        );
+    }
+    let applied_blocks = if block_windows.len() % 2 == 0 {
+        block_windows
+    } else {
+        block_windows
+            .into_iter()
+            .take(options.cscv_blocks.saturating_sub(1))
+            .collect()
+    };
+
+    let mut block_metrics = Vec::new();
+    if candidate_count >= 2 && applied_blocks.len() >= 4 {
+        let mut block_request = request.clone();
+        block_request.formulas = candidates.clone();
+        block_request.overfit_options = None;
+        block_request.stress_options = None;
+        for window in &applied_blocks {
+            let mut report = evaluate_window(full_data, &block_request, window)?;
+            sort_results(&mut report.results, RankBy::CalmarEquity, None);
+            let metrics = report
+                .results
+                .into_iter()
+                .map(|result| {
+                    let metric = result.stats.total_return
+                        - options.complexity_penalty * result.stats.depth as f64;
+                    (result.formula, metric)
+                })
+                .collect::<HashMap<_, _>>();
+            block_metrics.push(metrics);
+        }
+    }
+
+    let splits = cscv_splits(applied_blocks.len(), options.cscv_max_splits);
+    let mut decisions = Vec::new();
+    for (split_idx, train_indices) in splits.iter().enumerate() {
+        let train_set = train_indices.iter().copied().collect::<BTreeSet<_>>();
+        let test_indices = (0..applied_blocks.len())
+            .filter(|idx| !train_set.contains(idx))
+            .collect::<Vec<_>>();
+        let mut train_scores = HashMap::new();
+        let mut test_scores = HashMap::new();
+        for formula in &candidates {
+            let mut train = 0.0;
+            let mut test = 0.0;
+            for idx in train_indices {
+                train += block_metrics
+                    .get(*idx)
+                    .and_then(|metrics| metrics.get(&formula.expression))
+                    .copied()
+                    .unwrap_or(f64::NEG_INFINITY);
+            }
+            for idx in &test_indices {
+                test += block_metrics
+                    .get(*idx)
+                    .and_then(|metrics| metrics.get(&formula.expression))
+                    .copied()
+                    .unwrap_or(f64::NEG_INFINITY);
+            }
+            train_scores.insert(formula.expression.clone(), train);
+            test_scores.insert(formula.expression.clone(), test);
+        }
+
+        let Some((selected, train_metric)) = best_formula_by_score(&candidates, &train_scores)
+        else {
+            continue;
+        };
+        let test_metric = test_scores
+            .get(&selected)
+            .copied()
+            .unwrap_or(f64::NEG_INFINITY);
+        let mut ranked_test = test_scores.iter().collect::<Vec<_>>();
+        ranked_test
+            .sort_by(|left, right| right.1.total_cmp(left.1).then_with(|| left.0.cmp(right.0)));
+        let test_rank = ranked_test
+            .iter()
+            .position(|(formula, _)| *formula == &selected)
+            .map(|idx| idx + 1)
+            .unwrap_or(candidate_count);
+        let percentile = ((candidate_count - test_rank + 1) as f64 / candidate_count as f64)
+            .clamp(1e-9, 1.0 - 1e-9);
+        let logit = (percentile / (1.0 - percentile)).ln();
+        decisions.push(CscvDecision {
+            split_index: split_idx + 1,
+            train_blocks: train_indices
+                .iter()
+                .map(|idx| applied_blocks[*idx].label.clone())
+                .collect(),
+            test_blocks: test_indices
+                .iter()
+                .map(|idx| applied_blocks[*idx].label.clone())
+                .collect(),
+            selected_formula: selected,
+            train_metric,
+            test_metric,
+            test_rank,
+            candidate_count,
+            test_percentile: percentile,
+            logit,
+            overfit: logit <= 0.0,
+        });
+    }
+
+    let pbo = if decisions.is_empty() {
+        None
+    } else {
+        Some(decisions.iter().filter(|row| row.overfit).count() as f64 / decisions.len() as f64)
+    };
+    let selected_samples = selected_formula
+        .as_ref()
+        .map(|formula| {
+            block_metrics
+                .iter()
+                .filter_map(|metrics| metrics.get(formula).copied())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let psr = probabilistic_sharpe_ratio(&selected_samples, 0.0);
+    let dsr = deflated_sharpe_ratio(&selected_samples, effective_trials);
+    let selected_positive_window_ratio = if selected_samples.is_empty() {
+        None
+    } else {
+        Some(
+            selected_samples
+                .iter()
+                .filter(|value| **value > 0.0)
+                .count() as f64
+                / selected_samples.len() as f64,
+        )
+    };
+
+    let mut status = ResearchGateStatus::Pass;
+    if pbo.is_none() && psr.is_none() && dsr.is_none() {
+        status = ResearchGateStatus::Unavailable;
+    }
+    if pbo.is_some_and(|value| value > options.max_pbo)
+        || psr.is_some_and(|value| value < options.min_psr)
+        || dsr.is_some_and(|value| value < options.min_dsr)
+        || selected_positive_window_ratio
+            .is_some_and(|value| value < options.min_positive_window_ratio)
+    {
+        status = ResearchGateStatus::Fail;
+    }
+    if !warnings.is_empty() && status == ResearchGateStatus::Pass {
+        status = ResearchGateStatus::Warning;
+    }
+
+    Ok(OverfitReport {
+        schema_version: 1,
+        status,
+        candidate_count,
+        effective_trials,
+        cscv_blocks_requested: options.cscv_blocks,
+        cscv_blocks_applied: applied_blocks.len(),
+        cscv_splits: decisions.len(),
+        pbo,
+        psr,
+        dsr,
+        selected_formula_sha256: selected_formula.as_deref().map(sha256_text),
+        selected_formula,
+        selected_positive_window_ratio,
+        warnings,
+        decisions,
+    })
+}
+
+fn compute_stress_report(
+    full_data: &ColumnarData,
+    request: &FormulaEvalRequest,
+    pre: &FormulaWindowReport,
+    selection: Option<&SelectionReport>,
+    options: &StressOptions,
+) -> Result<StressReport> {
+    let mut warnings = Vec::new();
+    let selected_formula = selection
+        .and_then(|selection| selection.selected.as_ref())
+        .map(|selected| selected.formula.clone())
+        .or_else(|| pre.results.first().map(|result| result.formula.clone()));
+    let Some(selected_formula) = selected_formula else {
+        return Ok(StressReport {
+            schema_version: 1,
+            status: ResearchGateStatus::Unavailable,
+            selected_formula: None,
+            selected_formula_sha256: None,
+            scenarios: Vec::new(),
+            warnings: vec![
+                "no selected or top pre formula was available for stress testing".to_string(),
+            ],
+        });
+    };
+    let selected_ranked = request
+        .formulas
+        .iter()
+        .find(|formula| formula.expression == selected_formula)
+        .cloned()
+        .ok_or_else(|| anyhow!("selected formula was not found in the request formula set"))?;
+
+    let mut scenarios = Vec::new();
+    for scenario in stress_scenarios(request) {
+        let mut stress_request = request.clone();
+        stress_request.formulas = vec![selected_ranked.clone()];
+        stress_request.overfit_options = None;
+        stress_request.stress_options = None;
+        if let Some(base) = request.cost_per_trade_r {
+            stress_request.cost_per_trade_r =
+                Some(base * scenario.cost_multiplier + scenario.extra_cost_per_trade_r);
+        }
+        if let Some(base) = request.cost_per_trade_dollar {
+            stress_request.cost_per_trade_dollar =
+                Some(base * scenario.cost_multiplier + scenario.extra_cost_per_trade_dollar);
+        }
+        if let Some(max_contracts) = scenario.max_contracts_override {
+            stress_request.max_contracts = Some(max_contracts);
+        }
+        let pre_window = DateWindow {
+            label: "pre".to_string(),
+            year: None,
+            start: None,
+            end: Some(request.cutoff),
+            apply_embargo: false,
+        };
+        let post_window = DateWindow {
+            label: "post".to_string(),
+            year: None,
+            start: Some(next_day(request.cutoff)?),
+            end: None,
+            apply_embargo: true,
+        };
+        let pre_result = evaluate_window(full_data, &stress_request, &pre_window)?
+            .results
+            .into_iter()
+            .next();
+        let post_result = evaluate_window(full_data, &stress_request, &post_window)?
+            .results
+            .into_iter()
+            .next();
+        let (Some(pre_result), Some(post_result)) = (pre_result, post_result) else {
+            warnings.push(format!(
+                "stress scenario '{}' produced no result after filters",
+                scenario.name
+            ));
+            continue;
+        };
+        let pass = post_result.stats.total_return >= options.min_total_r
+            && post_result.stats.expectancy >= options.min_expectancy;
+        scenarios.push(StressScenarioResult {
+            scenario: scenario.name,
+            cost_multiplier: scenario.cost_multiplier,
+            extra_cost_per_trade_r: scenario.extra_cost_per_trade_r,
+            extra_cost_per_trade_dollar: scenario.extra_cost_per_trade_dollar,
+            max_contracts_override: scenario.max_contracts_override,
+            pre_trades: pre_result.trades,
+            post_trades: post_result.trades,
+            pre_total_r: pre_result.stats.total_return,
+            post_total_r: post_result.stats.total_return,
+            pre_expectancy: pre_result.stats.expectancy,
+            post_expectancy: post_result.stats.expectancy,
+            post_max_drawdown_r: post_result.stats.max_drawdown,
+            pass,
+        });
+    }
+
+    let status = if scenarios.is_empty() {
+        ResearchGateStatus::Unavailable
+    } else if scenarios.iter().all(|scenario| scenario.pass) {
+        if warnings.is_empty() {
+            ResearchGateStatus::Pass
+        } else {
+            ResearchGateStatus::Warning
+        }
+    } else {
+        ResearchGateStatus::Fail
+    };
+
+    Ok(StressReport {
+        schema_version: 1,
+        status,
+        selected_formula_sha256: Some(sha256_text(&selected_formula)),
+        selected_formula: Some(selected_formula),
+        scenarios,
+        warnings,
+    })
+}
+
+#[derive(Debug)]
+struct StressScenario {
+    name: String,
+    cost_multiplier: f64,
+    extra_cost_per_trade_r: f64,
+    extra_cost_per_trade_dollar: f64,
+    max_contracts_override: Option<usize>,
+}
+
+fn stress_scenarios(request: &FormulaEvalRequest) -> Vec<StressScenario> {
+    let mut scenarios = vec![
+        StressScenario {
+            name: "baseline".to_string(),
+            cost_multiplier: 1.0,
+            extra_cost_per_trade_r: 0.0,
+            extra_cost_per_trade_dollar: 0.0,
+            max_contracts_override: None,
+        },
+        StressScenario {
+            name: "cost_1_5x".to_string(),
+            cost_multiplier: 1.5,
+            extra_cost_per_trade_r: 0.0,
+            extra_cost_per_trade_dollar: 0.0,
+            max_contracts_override: None,
+        },
+        StressScenario {
+            name: "cost_2x".to_string(),
+            cost_multiplier: 2.0,
+            extra_cost_per_trade_r: 0.0,
+            extra_cost_per_trade_dollar: 0.0,
+            max_contracts_override: None,
+        },
+    ];
+    if let (Some(tick_value), Some(dollars_per_r)) = (request.tick_value, request.dollars_per_r) {
+        if tick_value > 0.0 && dollars_per_r > 0.0 {
+            for ticks in [1.0, 2.0] {
+                scenarios.push(StressScenario {
+                    name: format!("{}_ticks_worse_entry_exit", ticks as usize),
+                    cost_multiplier: 1.0,
+                    extra_cost_per_trade_r: (2.0 * ticks * tick_value) / dollars_per_r,
+                    extra_cost_per_trade_dollar: 2.0 * ticks * tick_value,
+                    max_contracts_override: None,
+                });
+            }
+        }
+    }
+    if let Some(max_contracts) = request.max_contracts {
+        let reduced = (max_contracts / 2).max(request.min_contracts).max(1);
+        if reduced < max_contracts {
+            scenarios.push(StressScenario {
+                name: "half_max_contracts".to_string(),
+                cost_multiplier: 1.0,
+                extra_cost_per_trade_r: 0.0,
+                extra_cost_per_trade_dollar: 0.0,
+                max_contracts_override: Some(reduced),
+            });
+        }
+    }
+    scenarios
+}
+
+fn candidate_formulas(
+    request: &FormulaEvalRequest,
+    pre: &FormulaWindowReport,
+    limit: usize,
+) -> Vec<RankedFormula> {
+    let by_expression = request
+        .formulas
+        .iter()
+        .map(|formula| (formula.expression.as_str(), formula))
+        .collect::<HashMap<_, _>>();
+    pre.results
+        .iter()
+        .take(limit.max(1))
+        .filter_map(|result| by_expression.get(result.formula.as_str()).copied().cloned())
+        .collect()
+}
+
+fn best_formula_by_score(
+    candidates: &[RankedFormula],
+    scores: &HashMap<String, f64>,
+) -> Option<(String, f64)> {
+    candidates
+        .iter()
+        .filter_map(|formula| {
+            scores
+                .get(&formula.expression)
+                .copied()
+                .map(|score| (formula.expression.clone(), score))
+        })
+        .max_by(|left, right| {
+            left.1
+                .total_cmp(&right.1)
+                .then_with(|| right.0.cmp(&left.0))
+        })
+}
+
+fn chronological_blocks(data: &ColumnarData, requested_blocks: usize) -> Result<Vec<DateWindow>> {
+    let (Some(start), Some(end)) = date_bounds(data)? else {
+        return Ok(Vec::new());
+    };
+    let requested = requested_blocks.max(2);
+    let days = (end - start).num_days().max(1) + 1;
+    let applied = requested.min(days as usize).max(2);
+    let mut out = Vec::new();
+    for idx in 0..applied {
+        let start_offset = ((idx as i64) * days) / applied as i64;
+        let end_offset = (((idx as i64 + 1) * days) / applied as i64) - 1;
+        let block_start = start + chrono::Duration::days(start_offset);
+        let block_end = start + chrono::Duration::days(end_offset.max(start_offset));
+        out.push(DateWindow {
+            label: format!("block-{:02}", idx + 1),
+            year: None,
+            start: Some(block_start),
+            end: Some(block_end.min(end)),
+            apply_embargo: false,
+        });
+    }
+    Ok(out)
+}
+
+fn cscv_splits(blocks: usize, max_splits: usize) -> Vec<Vec<usize>> {
+    if blocks < 4 || blocks % 2 != 0 || max_splits == 0 {
+        return Vec::new();
+    }
+    let half = blocks / 2;
+    let mut out = Vec::new();
+    let mut current = Vec::with_capacity(half);
+    cscv_splits_rec(blocks, half, 0, &mut current, &mut out, max_splits);
+    out
+}
+
+fn cscv_splits_rec(
+    blocks: usize,
+    half: usize,
+    start: usize,
+    current: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+    max_splits: usize,
+) {
+    if out.len() >= max_splits {
+        return;
+    }
+    if current.len() == half {
+        out.push(current.clone());
+        return;
+    }
+    for idx in start..blocks {
+        current.push(idx);
+        cscv_splits_rec(blocks, half, idx + 1, current, out, max_splits);
+        current.pop();
+        if out.len() >= max_splits {
+            return;
+        }
+    }
 }
 
 pub fn equity_curve_rows(
@@ -340,6 +873,7 @@ pub fn equity_curve_rows(
             year: None,
             start: None,
             end: Some(request.cutoff),
+            apply_embargo: false,
         };
         rows.extend(equity_curve_rows_for_window(
             &full_data,
@@ -359,6 +893,7 @@ pub fn equity_curve_rows(
             year: None,
             start: Some(next_day(request.cutoff)?),
             end: None,
+            apply_embargo: true,
         };
         rows.extend(equity_curve_rows_for_window(
             &full_data,
@@ -384,7 +919,7 @@ fn evaluate_window(
     request: &FormulaEvalRequest,
     window: &DateWindow,
 ) -> Result<FormulaWindowReport> {
-    let data = filter_for_window(full_data, window)?;
+    let (data, guard) = filter_for_window(full_data, request, window)?;
     let rows = data.approx_rows();
     let (start, end) = date_bounds(&data)?;
     if rows == 0 {
@@ -394,6 +929,7 @@ fn evaluate_window(
             start,
             end,
             buy_and_hold: None,
+            guard,
             results: Vec::new(),
         });
     }
@@ -456,6 +992,7 @@ fn evaluate_window(
         start,
         end,
         buy_and_hold: buy_and_hold(&data, request.capital_dollar).ok().flatten(),
+        guard,
         results,
     })
 }
@@ -712,8 +1249,136 @@ fn validate_required_columns(data: &ColumnarData, request: &FormulaEvalRequest) 
     Ok(())
 }
 
-fn filter_for_window(data: &ColumnarData, window: &DateWindow) -> Result<ColumnarData> {
-    data.filter_by_date_range(window.start, window.end)
+fn filter_for_window(
+    data: &ColumnarData,
+    request: &FormulaEvalRequest,
+    window: &DateWindow,
+) -> Result<(ColumnarData, WindowGuardReport)> {
+    let mut filtered = data.filter_by_date_range(window.start, window.end)?;
+    let mut guard = WindowGuardReport {
+        rows_after_date_filter: filtered.approx_rows(),
+        embargo_bars_requested: if window.apply_embargo {
+            request.selection_policy.embargo_bars
+        } else {
+            0
+        },
+        ..Default::default()
+    };
+
+    if guard.embargo_bars_requested > 0 && filtered.approx_rows() > 0 {
+        let applied = guard.embargo_bars_requested.min(filtered.approx_rows());
+        filtered = filtered.slice_rows(applied, filtered.approx_rows().saturating_sub(applied))?;
+        guard.embargo_bars_applied = applied;
+    }
+    guard.rows_after_embargo = filtered.approx_rows();
+
+    if request.selection_policy.purge_cross_boundary_exits {
+        let (purged, guarded) = purge_cross_boundary_exits(filtered, request)?;
+        guard.cross_boundary_rows_purged = purged;
+        filtered = guarded;
+    }
+
+    Ok((filtered, guard))
+}
+
+fn purge_cross_boundary_exits(
+    data: ColumnarData,
+    request: &FormulaEvalRequest,
+) -> Result<(usize, ColumnarData)> {
+    let exit_column = format!("{}_exit_i", request.target);
+    if !data.has_column(&exit_column) || data.approx_rows() == 0 {
+        return Ok((0, data));
+    }
+
+    let rr_column = request
+        .rr_column
+        .as_deref()
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("rr_{}", request.target));
+    if !data.has_column(&rr_column) || !data.has_column(&request.target) {
+        return Ok((0, data));
+    }
+
+    let rows = data.approx_rows();
+    let exits = data.i64_column(&exit_column)?;
+    let target = data.boolean_column(&request.target)?;
+    let rewards = data.float_column(&rr_column)?;
+    let eligible_column = format!("{}_eligible", request.target);
+    let eligible = if data.has_column(&eligible_column) {
+        Some(data.boolean_column(&eligible_column)?)
+    } else {
+        None
+    };
+
+    let mut target_values = Vec::with_capacity(rows);
+    let mut reward_values = Vec::with_capacity(rows);
+    let mut eligible_values = eligible.as_ref().map(|_| Vec::with_capacity(rows));
+    let mut purged = 0usize;
+
+    for idx in 0..rows {
+        let exit_i = exits.get(idx);
+        let crosses_boundary = !matches!(exit_i, Some(v) if v >= 0 && (v as usize) < rows);
+        let target_value = target.get(idx).unwrap_or(false);
+        let reward_value = rewards.get(idx).unwrap_or(f64::NAN);
+        let eligible_value = eligible
+            .as_ref()
+            .and_then(|values| values.get(idx))
+            .unwrap_or(true);
+
+        if crosses_boundary {
+            if target_value || reward_value.is_finite() || eligible_value {
+                purged += 1;
+            }
+            target_values.push(false);
+            reward_values.push(f64::NAN);
+            if let Some(values) = eligible_values.as_mut() {
+                values.push(false);
+            }
+        } else {
+            target_values.push(target_value);
+            reward_values.push(reward_value);
+            if let Some(values) = eligible_values.as_mut() {
+                values.push(eligible_value);
+            }
+        }
+    }
+
+    if purged == 0 {
+        return Ok((0, data));
+    }
+
+    let mut frame = data.data_frame().as_ref().clone();
+    replace_series(
+        &mut frame,
+        &request.target,
+        Series::new(request.target.as_str().into(), target_values),
+    )?;
+    replace_series(
+        &mut frame,
+        &rr_column,
+        Series::new(rr_column.as_str().into(), reward_values),
+    )?;
+    if let Some(values) = eligible_values {
+        replace_series(
+            &mut frame,
+            &eligible_column,
+            Series::new(eligible_column.as_str().into(), values),
+        )?;
+    }
+
+    Ok((purged, ColumnarData::from_frame(frame)))
+}
+
+fn replace_series(frame: &mut DataFrame, name: &str, series: Series) -> Result<()> {
+    if frame.column(name).is_ok() {
+        *frame = frame
+            .drop(name)
+            .with_context(|| format!("failed to drop column '{name}' before replacement"))?;
+    }
+    frame
+        .with_column(series.into())
+        .with_context(|| format!("failed to replace guarded column '{name}'"))?;
+    Ok(())
 }
 
 fn annual_windows(data: &ColumnarData, scope: &DateWindow) -> Result<Vec<DateWindow>> {
@@ -749,6 +1414,7 @@ fn annual_windows(data: &ColumnarData, scope: &DateWindow) -> Result<Vec<DateWin
             year: Some(year),
             start: Some(start),
             end: Some(end),
+            apply_embargo: false,
         });
     }
     Ok(out)
@@ -979,7 +1645,7 @@ fn equity_curve_rows_for_window(
     top_k: usize,
     rank_source: RankBy,
 ) -> Result<Vec<EquityCurveRow>> {
-    let data = filter_for_window(full_data, window)?;
+    let (data, _guard) = filter_for_window(full_data, request, window)?;
     if data.approx_rows() == 0 {
         return Ok(Vec::new());
     }

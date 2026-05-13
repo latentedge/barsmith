@@ -19,6 +19,23 @@ pub struct ColumnarData {
 }
 
 impl ColumnarData {
+    pub fn from_frame(df: DataFrame) -> Self {
+        let column_names = df
+            .columns()
+            .iter()
+            .map(|series| series.name().to_string())
+            .collect::<Vec<_>>();
+        let metadata = DataSetMetadata {
+            column_names: Arc::new(column_names),
+            approx_rows: df.height(),
+        };
+
+        Self {
+            frame: Arc::new(df),
+            metadata,
+        }
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let display_path = path.display().to_string();
         let df = CsvReadOptions::default()
@@ -30,21 +47,7 @@ impl ColumnarData {
             .finish()
             .with_context(|| format!("Failed to collect columnar data from {display_path}"))?;
 
-        let column_names = df
-            .columns()
-            .iter()
-            .map(|series| series.name().to_string())
-            .collect::<Vec<_>>();
-
-        let metadata = DataSetMetadata {
-            column_names: Arc::new(column_names),
-            approx_rows: df.height(),
-        };
-
-        Ok(Self {
-            frame: Arc::new(df),
-            metadata,
-        })
+        Ok(Self::from_frame(df))
     }
 
     pub fn metadata(&self) -> DataSetMetadata {
@@ -237,70 +240,26 @@ impl ColumnarData {
             .filter(&mask)
             .with_context(|| "Failed to filter dataframe to requested date range")?;
 
-        // If the dataset was sliced away from the front (include_date_start),
-        // remap any target-provided exit-index columns so they remain valid
-        // within the filtered (0-based) row coordinates. This keeps
-        // `--stacking-mode no-stacking` correct after date filtering.
         if let Some(start_offset) = keep.iter().position(|flag| *flag) {
             if start_offset > 0 {
-                let offset = start_offset as i64;
-                let names: Vec<String> = filtered
-                    .get_column_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                for name in names {
-                    if !(name.ends_with("_exit_i")
-                        || name.ends_with("_exit_i_long")
-                        || name.ends_with("_exit_i_short"))
-                    {
-                        continue;
-                    }
-                    let Ok(col) = filtered.column(&name) else {
-                        continue;
-                    };
-                    if !matches!(col.dtype(), DataType::Int64) {
-                        continue;
-                    }
-                    let ca = col
-                        .i64()
-                        .with_context(|| format!("Failed to interpret '{name}' as i64"))?
-                        .clone();
-                    let adjusted = Int64Chunked::from_iter_options(
-                        name.as_str().into(),
-                        ca.into_iter().map(|opt| match opt {
-                            Some(v) if v >= offset => Some(v - offset),
-                            _ => None,
-                        }),
-                    )
-                    .into_series();
-                    if filtered.column(&name).is_ok() {
-                        filtered = filtered
-                            .drop(&name)
-                            .with_context(|| format!("Failed to drop '{name}' for remapping"))?;
-                    }
-                    filtered.with_column(adjusted.into()).with_context(|| {
-                        format!("Failed to update remapped exit index column '{name}'")
-                    })?;
-                }
+                remap_exit_indices(&mut filtered, start_offset as i64)?;
             }
         }
 
-        let column_names = filtered
-            .columns()
-            .iter()
-            .map(|s| s.name().to_string())
-            .collect::<Vec<_>>();
+        Ok(Self::from_frame(filtered))
+    }
 
-        let metadata = DataSetMetadata {
-            column_names: Arc::new(column_names),
-            approx_rows: filtered.height(),
-        };
-
-        Ok(Self {
-            frame: Arc::new(filtered),
-            metadata,
-        })
+    pub fn slice_rows(&self, offset: usize, length: usize) -> Result<Self> {
+        if offset == 0 && length >= self.approx_rows() {
+            return Ok(self.clone());
+        }
+        let available = self.approx_rows().saturating_sub(offset);
+        let length = length.min(available);
+        let mut sliced = self.frame.as_ref().slice(offset as i64, length);
+        if offset > 0 {
+            remap_exit_indices(&mut sliced, offset as i64)?;
+        }
+        Ok(Self::from_frame(sliced))
     }
 
     /// Return a new frame with only the selected columns.
@@ -314,22 +273,51 @@ impl ColumnarData {
             .select(&names)
             .with_context(|| "Failed to prune dataframe to selected columns")?;
 
-        let column_names = df
-            .columns()
-            .iter()
-            .map(|series| series.name().to_string())
-            .collect::<Vec<_>>();
-
-        let metadata = DataSetMetadata {
-            column_names: Arc::new(column_names),
-            approx_rows: df.height(),
-        };
-
-        Ok(Self {
-            frame: Arc::new(df),
-            metadata,
-        })
+        Ok(Self::from_frame(df))
     }
+}
+
+fn remap_exit_indices(frame: &mut DataFrame, offset: i64) -> Result<()> {
+    let names: Vec<String> = frame
+        .get_column_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for name in names {
+        if !(name.ends_with("_exit_i")
+            || name.ends_with("_exit_i_long")
+            || name.ends_with("_exit_i_short"))
+        {
+            continue;
+        }
+        let Ok(col) = frame.column(&name) else {
+            continue;
+        };
+        if !matches!(col.dtype(), DataType::Int64) {
+            continue;
+        }
+        let ca = col
+            .i64()
+            .with_context(|| format!("Failed to interpret '{name}' as i64"))?
+            .clone();
+        let adjusted = Int64Chunked::from_iter_options(
+            name.as_str().into(),
+            ca.into_iter().map(|opt| match opt {
+                Some(v) if v >= offset => Some(v - offset),
+                _ => None,
+            }),
+        )
+        .into_series();
+        if frame.column(&name).is_ok() {
+            *frame = frame
+                .drop(&name)
+                .with_context(|| format!("Failed to drop '{name}' for remapping"))?;
+        }
+        frame
+            .with_column(adjusted.into())
+            .with_context(|| format!("Failed to update remapped exit index column '{name}'"))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

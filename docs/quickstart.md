@@ -69,6 +69,8 @@ barsmith_cli eval-formulas \
 ```
 
 See `docs/cli.md` for the formula grammar and FRS/plot options.
+See `docs/research-protocol.md` for how the default selection protocol uses
+pre-window rank and post-window confirmation.
 
 ## Query stored results
 
@@ -79,6 +81,11 @@ barsmith_cli results \
   --target next_bar_color_and_wicks \
   --limit 20
 ```
+
+To feed stored results into `eval-formulas`, add `--export-formulas formulas.txt`.
+For holdout checks, export from a discovery/pre-only `comb` run rather than a
+run that searched the full history. The export also writes
+`formula_export_manifest.json` for strict protocol runs.
 
 ## Data contract
 

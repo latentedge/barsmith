@@ -34,6 +34,9 @@ This builds the release CLI and exercises:
 - resume continuation,
 - top-result reporting,
 - Rust-native ranked formula evaluation,
+- holdout selection artifacts,
+- strict protocol artifacts,
+- overfit and stress diagnostics,
 - formula CSV/JSON/FRS/equity-curve exports,
 - optional PNG plot rendering.
 

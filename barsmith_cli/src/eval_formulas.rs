@@ -10,6 +10,15 @@ use barsmith_rs::formula_eval::{
     equity_curve_rows, run_formula_evaluation,
 };
 use barsmith_rs::frs::{ForwardRobustnessComponents, FrsOptions};
+use barsmith_rs::overfit::OverfitOptions;
+use barsmith_rs::protocol::{
+    FormulaExportManifest, ResearchProtocol, ResearchStage, load_json,
+    validate_strict_research_inputs,
+};
+use barsmith_rs::selection::{
+    RejectionReason, SelectionDecision, SelectionPolicy, SelectionReport,
+};
+use barsmith_rs::stress::StressOptions;
 use chrono::NaiveDate;
 use serde::Serialize;
 
@@ -38,6 +47,27 @@ pub fn run(args: &EvalFormulasArgs) -> Result<EvalRunResult> {
         written_files.push(path.clone());
         println!("Formula JSON written: {}", path.display());
     }
+    if let (Some(path), Some(selection)) = (&args.selection_out, &report.selection) {
+        write_json(path, selection)?;
+        written_files.push(path.clone());
+        println!("Selection report written: {}", path.display());
+    }
+    if let (Some(path), Some(selection)) = (&args.selection_decisions_out, &report.selection) {
+        write_selection_decisions_csv(path, selection)?;
+        written_files.push(path.clone());
+        println!("Selection decisions written: {}", path.display());
+    }
+    if let (Some(path), Some(selection)) = (&args.selected_formulas_out, &report.selection) {
+        write_selected_formulas(path, selection)?;
+        written_files.push(path.clone());
+        println!("Selected formulas written: {}", path.display());
+    }
+    if let (Some(path), Some(validation)) = (&args.protocol_validation_out, &report.strict_protocol)
+    {
+        write_json(path, validation)?;
+        written_files.push(path.clone());
+        println!("Protocol validation written: {}", path.display());
+    }
     if let Some(path) = &args.frs_out {
         write_frs_summary_csv(path, &report)?;
         written_files.push(path.clone());
@@ -47,6 +77,26 @@ pub fn run(args: &EvalFormulasArgs) -> Result<EvalRunResult> {
         write_csv(path, &report.frs_window_rows)?;
         written_files.push(path.clone());
         println!("FRS windows written: {}", path.display());
+    }
+    if let (Some(path), Some(overfit)) = (&args.overfit_out, &report.overfit) {
+        write_json(path, overfit)?;
+        written_files.push(path.clone());
+        println!("Overfit report written: {}", path.display());
+    }
+    if let (Some(path), Some(overfit)) = (&args.overfit_decisions_out, &report.overfit) {
+        write_overfit_decisions_csv(path, overfit)?;
+        written_files.push(path.clone());
+        println!("Overfit decisions written: {}", path.display());
+    }
+    if let (Some(path), Some(stress)) = (&args.stress_out, &report.stress) {
+        write_json(path, stress)?;
+        written_files.push(path.clone());
+        println!("Stress report written: {}", path.display());
+    }
+    if let (Some(path), Some(stress)) = (&args.stress_matrix_out, &report.stress) {
+        write_csv(path, &stress.scenarios)?;
+        written_files.push(path.clone());
+        println!("Stress matrix written: {}", path.display());
     }
 
     let needs_curves = args.equity_curves_out.is_some() || args.plot;
@@ -87,6 +137,27 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
     let formulas = parse_ranked_formulas(&formulas_text)?;
     let cutoff = NaiveDate::parse_from_str(&args.cutoff, "%Y-%m-%d")
         .with_context(|| format!("invalid --cutoff '{}'", args.cutoff))?;
+    let stage = args.stage.to_stage();
+    validate_stage_formula_rules(stage, args, formulas.len())?;
+    let protocol: Option<ResearchProtocol> = args
+        .research_protocol
+        .as_deref()
+        .map(load_json)
+        .transpose()?;
+    let formula_manifest: Option<FormulaExportManifest> = args
+        .formula_export_manifest
+        .as_deref()
+        .map(load_json)
+        .transpose()?;
+    let target = normalize_target(&args.target);
+    let strict_protocol = Some(validate_strict_research_inputs(
+        stage,
+        args.strict_protocol,
+        protocol.as_ref(),
+        formula_manifest.as_ref(),
+        &target,
+        cutoff,
+    )?);
 
     let position_sizing = args.position_sizing.to_mode();
     let stop_distance_column = if position_sizing == PositionSizingMode::Contracts {
@@ -126,7 +197,7 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
     Ok(FormulaEvalRequest {
         prepared_path: args.prepared_path.clone(),
         formulas,
-        target: normalize_target(&args.target),
+        target,
         rr_column: args.rr_column.clone(),
         cutoff,
         stacking_mode: args.stacking_mode.to_mode(),
@@ -158,7 +229,78 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
             gamma: args.frs_gamma,
             delta: args.frs_delta,
         },
+        selection_mode: selection_mode_for_stage(stage, args.selection_mode.to_mode()),
+        selection_policy: SelectionPolicy {
+            candidate_top_k: args.candidate_top_k,
+            pre_min_trades: args.pre_min_trades,
+            post_min_trades: args.post_min_trades,
+            post_warn_below_trades: args.post_warn_below_trades,
+            pre_min_total_r: args.pre_min_total_r,
+            post_min_total_r: args.post_min_total_r,
+            pre_min_expectancy: args.pre_min_expectancy,
+            post_min_expectancy: args.post_min_expectancy,
+            max_drawdown_r: args.selection_max_drawdown_r,
+            min_pre_frs: (!args.no_frs).then_some(args.min_pre_frs),
+            max_return_degradation: Some(args.max_return_degradation),
+            max_single_trade_contribution: args.max_single_trade_contribution,
+            max_formula_depth: args.max_formula_depth,
+            min_density_per_1000_bars: args.min_density_per_1000_bars,
+            complexity_penalty: args.complexity_penalty,
+            embargo_bars: args.embargo_bars,
+            purge_cross_boundary_exits: !args.no_purge_cross_boundary_exits,
+        },
+        stage,
+        strict_protocol,
+        overfit_options: (args.strict_protocol || args.overfit_report).then_some(OverfitOptions {
+            candidate_top_k: args.overfit_candidate_top_k,
+            cscv_blocks: args.cscv_blocks,
+            cscv_max_splits: args.cscv_max_splits,
+            max_pbo: args.max_pbo,
+            min_psr: args.min_psr,
+            min_dsr: args.min_dsr,
+            min_positive_window_ratio: args.min_positive_window_ratio,
+            effective_trials: args.effective_trials,
+            complexity_penalty: args.complexity_penalty,
+        }),
+        stress_options: (args.strict_protocol || args.stress_report).then_some(StressOptions {
+            min_total_r: args.stress_min_total_r,
+            min_expectancy: args.stress_min_expectancy,
+        }),
     })
+}
+
+fn validate_stage_formula_rules(
+    stage: ResearchStage,
+    args: &EvalFormulasArgs,
+    formula_count: usize,
+) -> Result<()> {
+    if stage.is_lockbox_like() && formula_count != 1 {
+        return Err(anyhow!(
+            "{} stage requires exactly one frozen formula; got {}",
+            stage.as_str(),
+            formula_count
+        ));
+    }
+    if stage.is_lockbox_like()
+        && args.selection_mode.to_mode() == barsmith_rs::selection::SelectionMode::ValidationRank
+    {
+        return Err(anyhow!(
+            "{} stage cannot use validation-rank because it chooses by post-window performance",
+            stage.as_str()
+        ));
+    }
+    Ok(())
+}
+
+fn selection_mode_for_stage(
+    stage: ResearchStage,
+    requested: barsmith_rs::selection::SelectionMode,
+) -> barsmith_rs::selection::SelectionMode {
+    if stage.is_lockbox_like() {
+        barsmith_rs::selection::SelectionMode::Off
+    } else {
+        requested
+    }
 }
 
 #[derive(Debug)]
@@ -241,8 +383,18 @@ fn print_report(report: &FormulaEvaluationReport, report_top: usize) {
     println!("Target: {}", report.target);
     println!("RR column: {}", report.rr_column);
     println!("Cutoff: {}", report.cutoff);
+    println!("Stage: {}", report.stage.as_str());
+    if let Some(strict) = &report.strict_protocol {
+        println!("Strict protocol: {}", strict.strict);
+        for warning in &strict.warnings {
+            println!("  Protocol warning: {warning}");
+        }
+    }
     print_window_report(&report.pre, report_top);
     print_window_report(&report.post, report_top);
+    print_selection_report(report.selection.as_ref());
+    print_overfit_report(report.overfit.as_ref());
+    print_stress_report(report.stress.as_ref());
 }
 
 fn print_window_report(window: &FormulaWindowReport, report_top: usize) {
@@ -312,6 +464,93 @@ fn print_formula_result(result: &FormulaResult) {
             f2(frs.p),
             f2(frs.trade_score)
         );
+    }
+}
+
+fn print_selection_report(selection: Option<&SelectionReport>) {
+    let Some(selection) = selection else {
+        return;
+    };
+    println!();
+    println!("=== Selection ({:?}) ===", selection.mode);
+    if let Some(selected) = &selection.selected {
+        println!(
+            "Selected pre-rank {} formula: {}",
+            selected.pre_rank, selected.formula
+        );
+        println!(
+            "  Post rank: {} | Pre Total R: {} | Post Total R: {} | Status: {:?}",
+            selected
+                .post_rank
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "n/a".to_string()),
+            f2(selected.pre_total_r),
+            selected
+                .post_total_r
+                .map(f2)
+                .unwrap_or_else(|| "n/a".to_string()),
+            selected.status
+        );
+    } else {
+        println!("No formula passed the configured selection gates.");
+    }
+    if let Some(top_post) = &selection.diagnostic_top_post {
+        println!(
+            "Diagnostic top post formula (not selected by holdout mode): rank {} | Total R {} | {}",
+            top_post.post_rank,
+            f2(top_post.post_total_r),
+            top_post.formula
+        );
+    }
+    for warning in &selection.warnings {
+        println!("  Warning: {warning}");
+    }
+}
+
+fn print_overfit_report(overfit: Option<&barsmith_rs::overfit::OverfitReport>) {
+    let Some(overfit) = overfit else {
+        return;
+    };
+    println!();
+    println!("=== Overfit Diagnostics ({:?}) ===", overfit.status);
+    println!(
+        "Candidates: {} | Effective trials: {} | CSCV splits: {}",
+        overfit.candidate_count, overfit.effective_trials, overfit.cscv_splits
+    );
+    println!(
+        "PBO: {} | PSR: {} | DSR: {} | Positive windows: {}",
+        opt_f4(overfit.pbo),
+        opt_f4(overfit.psr),
+        opt_f4(overfit.dsr),
+        opt_f4(overfit.selected_positive_window_ratio)
+    );
+    for warning in &overfit.warnings {
+        println!("  Warning: {warning}");
+    }
+}
+
+fn print_stress_report(stress: Option<&barsmith_rs::stress::StressReport>) {
+    let Some(stress) = stress else {
+        return;
+    };
+    println!();
+    println!("=== Stress Diagnostics ({:?}) ===", stress.status);
+    for scenario in &stress.scenarios {
+        let max_contracts = scenario
+            .max_contracts_override
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "base".to_string());
+        println!(
+            "{} | Max contracts {} | Post Total R {} | Post expectancy {} | pass={}",
+            scenario.scenario,
+            max_contracts,
+            f2(scenario.post_total_r),
+            f4(scenario.post_expectancy),
+            scenario.pass
+        );
+    }
+    for warning in &stress.warnings {
+        println!("  Warning: {warning}");
     }
 }
 
@@ -427,6 +666,133 @@ fn write_frs_summary_csv(path: &Path, report: &FormulaEvaluationReport) -> Resul
     Ok(())
 }
 
+#[derive(Serialize)]
+struct SelectionDecisionCsvRow<'a> {
+    formula: &'a str,
+    source_rank: usize,
+    pre_rank: usize,
+    post_rank: Option<usize>,
+    status: String,
+    reasons: String,
+    warnings: String,
+    pre_trades: usize,
+    post_trades: Option<usize>,
+    pre_total_r: f64,
+    post_total_r: Option<f64>,
+    pre_expectancy: f64,
+    post_expectancy: Option<f64>,
+    pre_max_drawdown_r: f64,
+    post_max_drawdown_r: Option<f64>,
+    pre_calmar_equity: f64,
+    post_calmar_equity: Option<f64>,
+    pre_frs: Option<f64>,
+    post_frs: Option<f64>,
+    post_to_pre_total_r_ratio: Option<f64>,
+    pre_largest_win_share: Option<f64>,
+    post_largest_win_share: Option<f64>,
+    formula_depth: usize,
+    pre_density_per_1000_bars: f64,
+    post_density_per_1000_bars: Option<f64>,
+    complexity_penalty: f64,
+}
+
+fn write_selection_decisions_csv(path: &Path, selection: &SelectionReport) -> Result<()> {
+    ensure_parent(path)?;
+    let mut writer = csv::Writer::from_path(path)?;
+    for decision in &selection.decisions {
+        writer.serialize(selection_decision_csv_row(decision))?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+fn selection_decision_csv_row(decision: &SelectionDecision) -> SelectionDecisionCsvRow<'_> {
+    let reasons = decision
+        .reasons
+        .iter()
+        .map(RejectionReason::as_str)
+        .collect::<Vec<_>>()
+        .join("|");
+    let warnings = decision.warnings.join("|");
+    SelectionDecisionCsvRow {
+        formula: &decision.formula,
+        source_rank: decision.source_rank,
+        pre_rank: decision.pre_rank,
+        post_rank: decision.post_rank,
+        status: format!("{:?}", decision.status),
+        reasons,
+        warnings,
+        pre_trades: decision.pre_trades,
+        post_trades: decision.post_trades,
+        pre_total_r: decision.pre_total_r,
+        post_total_r: decision.post_total_r,
+        pre_expectancy: decision.pre_expectancy,
+        post_expectancy: decision.post_expectancy,
+        pre_max_drawdown_r: decision.pre_max_drawdown_r,
+        post_max_drawdown_r: decision.post_max_drawdown_r,
+        pre_calmar_equity: decision.pre_calmar_equity,
+        post_calmar_equity: decision.post_calmar_equity,
+        pre_frs: decision.pre_frs,
+        post_frs: decision.post_frs,
+        post_to_pre_total_r_ratio: decision.post_to_pre_total_r_ratio,
+        pre_largest_win_share: decision.pre_largest_win_share,
+        post_largest_win_share: decision.post_largest_win_share,
+        formula_depth: decision.formula_depth,
+        pre_density_per_1000_bars: decision.pre_density_per_1000_bars,
+        post_density_per_1000_bars: decision.post_density_per_1000_bars,
+        complexity_penalty: decision.complexity_penalty,
+    }
+}
+
+fn write_selected_formulas(path: &Path, selection: &SelectionReport) -> Result<()> {
+    ensure_parent(path)?;
+    let text = match &selection.selected {
+        Some(selected) => format!("Rank {}: {}\n", selected.source_rank, selected.formula),
+        None => "# No formula passed the configured selection gates.\n".to_string(),
+    };
+    fs::write(path, text).with_context(|| format!("failed to write {}", path.display()))
+}
+
+#[derive(Serialize)]
+struct OverfitDecisionCsvRow<'a> {
+    split_index: usize,
+    train_blocks: String,
+    test_blocks: String,
+    selected_formula: &'a str,
+    train_metric: f64,
+    test_metric: f64,
+    test_rank: usize,
+    candidate_count: usize,
+    test_percentile: f64,
+    logit: f64,
+    overfit: bool,
+}
+
+fn write_overfit_decisions_csv(
+    path: &Path,
+    overfit: &barsmith_rs::overfit::OverfitReport,
+) -> Result<()> {
+    ensure_parent(path)?;
+    let mut writer = csv::Writer::from_path(path)?;
+    for row in &overfit.decisions {
+        writer.serialize(OverfitDecisionCsvRow {
+            split_index: row.split_index,
+            train_blocks: row.train_blocks.join("|"),
+            test_blocks: row.test_blocks.join("|"),
+            selected_formula: &row.selected_formula,
+            train_metric: row.train_metric,
+            test_metric: row.test_metric,
+            test_rank: row.test_rank,
+            candidate_count: row.candidate_count,
+            test_percentile: row.test_percentile,
+            logit: row.logit,
+            overfit: row.overfit,
+        })?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
 fn write_csv<T: Serialize>(path: &Path, rows: &[T]) -> Result<()> {
     ensure_parent(path)?;
     let mut writer = csv::Writer::from_path(path)?;
@@ -458,6 +824,10 @@ fn f2(value: f64) -> String {
 
 fn f4(value: f64) -> String {
     format_float(value, 4)
+}
+
+fn opt_f4(value: Option<f64>) -> String {
+    value.map(f4).unwrap_or_else(|| "n/a".to_string())
 }
 
 fn format_float(value: f64, decimals: usize) -> String {

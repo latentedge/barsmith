@@ -35,7 +35,11 @@ The README contains a detailed flowchart: see `README.md` (â€œHow `comb` worksâ€
 3. Distinct formula clauses are converted into bitsets once per window.
 4. Formula clause indices are evaluated through the same `stats::evaluate_combination_indices` path used by combination search.
 5. Optional FRS runs the same formulas across annual windows, then scores return consistency, drawdown shape, stability, and trade count.
-6. Optional equity-curve exports replay selected top formulas through the shared selection logic and keep plotting outside the evaluator path.
+6. Selection builds a candidate decision report from the pre/post rankings. The default `holdout-confirm` mode chooses by pre rank and treats post metrics as gates.
+7. Strict protocol validation checks stage windows and formula-export provenance before a run can be treated as validation or lockbox evidence.
+8. Optional overfit diagnostics compute bounded CSCV/PBO, PSR, DSR, effective-trials, and positive-window evidence outside the search hot path.
+9. Optional stress diagnostics rerun the selected formula under cost, slippage, and sizing scenarios.
+10. Optional equity-curve exports replay selected top formulas through the shared selection logic and keep plotting outside the evaluator path.
 
 ## Durability model
 
@@ -53,6 +57,10 @@ Resume is index-based and protected by `run_manifest.json`, which binds the outp
 - `storage`: Parquet/DuckDB persistence, resume metadata, and top-results queries.
 - `formula`: ranked formula parsing and clause normalization.
 - `formula_eval`: prepared-dataset formula evaluation, FRS wiring, and equity-curve row generation.
+- `selection`: pre/post candidate selection policy and decision reports.
+- `protocol`: strict research protocol, stage, provenance, and formula-export manifest contracts.
+- `overfit`: PBO/CSCV and Sharpe-based overfit diagnostics.
+- `stress`: execution stress report types.
 - `frs`: Forward Robustness Score component calculation.
 - `bitset`: compact mask storage plus scalar/SIMD scan loops used by the evaluator.
 - `stats`: evaluation context and bitset-backed combination evaluation.

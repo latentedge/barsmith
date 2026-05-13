@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use barsmith_rs::protocol::{ResearchProtocol, load_json};
 use tempfile::tempdir;
 
 fn workspace_root() -> PathBuf {
@@ -151,6 +152,7 @@ fn cli_results_queries_real_run_output() {
     );
 
     let mut total_return_cmd = barsmith_cmd();
+    let export_path = temp_dir.path().join("formulas.txt");
     let total_return_output = total_return_cmd
         .args([
             "results",
@@ -166,6 +168,8 @@ fn cli_results_queries_real_run_output() {
             "total-return",
             "--limit",
             "3",
+            "--export-formulas",
+            export_path.to_str().expect("export path"),
         ])
         .current_dir(workspace_root())
         .output()
@@ -184,6 +188,289 @@ fn cli_results_queries_real_run_output() {
     assert!(
         total_return_stdout.contains("Total R:"),
         "total-return output should show total R: {total_return_stdout}"
+    );
+    assert!(
+        total_return_stdout.contains("discovery/pre-only"),
+        "formula export should print the holdout provenance note: {total_return_stdout}"
+    );
+    let exported = std::fs::read_to_string(&export_path).expect("exported formulas");
+    assert!(
+        exported.contains("# Barsmith ranked formula export"),
+        "formula export should include metadata comments: {exported}"
+    );
+    assert!(
+        exported.contains("discovery/pre-only"),
+        "formula export should include the holdout provenance note: {exported}"
+    );
+    assert!(
+        exported.contains("Rank 1:") || exported.lines().all(|line| line.starts_with('#')),
+        "unexpected formula export: {exported}"
+    );
+    let export_manifest_path = temp_dir.path().join("formula_export_manifest.json");
+    let export_manifest =
+        std::fs::read_to_string(&export_manifest_path).expect("formula export manifest");
+    assert!(
+        export_manifest.contains("\"target\": \"next_bar_color_and_wicks\""),
+        "unexpected formula export manifest: {export_manifest}"
+    );
+
+    let protocol_path = temp_dir.path().join("research_protocol.json");
+    std::fs::write(
+        &protocol_path,
+        r#"{
+  "schema_version": 1,
+  "protocol_id": "results-export-smoke",
+  "dataset_id": "tiny_sample",
+  "target": "next_bar_color_and_wicks",
+  "direction": "long",
+  "engine": "builtin",
+  "strict": true,
+  "discovery": {"start": "2024-01-01", "end": "2024-06-30"},
+  "validation": {"start": "2024-07-01", "end": "2024-12-31"},
+  "lockbox": {"start": "2025-01-01", "end": "2025-03-31"},
+  "live_shadow_min_days": 30,
+  "live_shadow_min_trades": 100,
+  "candidate_top_k": 3,
+  "notes": []
+}"#,
+    )
+    .expect("protocol");
+    let protocol_hash = load_json::<ResearchProtocol>(&protocol_path)
+        .expect("load results protocol")
+        .hash()
+        .expect("results protocol hash");
+    let protocol_export_path = temp_dir.path().join("protocol_formulas.txt");
+    let protocol_manifest_path = temp_dir
+        .path()
+        .join("protocol_formula_export_manifest.json");
+    let mut protocol_results_cmd = barsmith_cmd();
+    let protocol_results_output = protocol_results_cmd
+        .args([
+            "results",
+            "--output-dir",
+            output_dir.to_str().expect("output"),
+            "--direction",
+            "long",
+            "--target",
+            "next_bar_color_and_wicks",
+            "--min-samples",
+            "25",
+            "--rank-by",
+            "total-return",
+            "--limit",
+            "3",
+            "--export-formulas",
+            protocol_export_path.to_str().expect("protocol export path"),
+            "--export-formula-manifest",
+            protocol_manifest_path
+                .to_str()
+                .expect("protocol manifest path"),
+            "--research-protocol",
+            protocol_path.to_str().expect("protocol path"),
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to spawn protocol-bound results export");
+
+    assert!(
+        protocol_results_output.status.success(),
+        "protocol-bound results export exited with {:?}",
+        protocol_results_output.status
+    );
+    let protocol_manifest =
+        std::fs::read_to_string(&protocol_manifest_path).expect("protocol manifest");
+    assert!(
+        protocol_manifest.contains(&format!("\"protocol_sha256\": \"{protocol_hash}\"")),
+        "protocol-bound formula export should include the protocol hash: {protocol_manifest}"
+    );
+}
+
+#[test]
+fn cli_eval_formulas_strict_protocol_writes_overfit_and_stress_reports() {
+    let temp_dir = tempdir().expect("temp output dir");
+    let prepared = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_prepared.csv");
+    let formulas = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_formulas.txt");
+    let protocol = temp_dir.path().join("research_protocol.json");
+    let formula_manifest = temp_dir.path().join("formula_export_manifest.json");
+    std::fs::write(
+        &protocol,
+        r#"{
+  "schema_version": 1,
+  "protocol_id": "strict-smoke",
+  "dataset_id": "tiny_forward",
+  "target": "2x_atr_tp_atr_stop",
+  "direction": "long",
+  "engine": "custom",
+  "strict": true,
+  "discovery": {"start": "2024-12-29", "end": "2024-12-31"},
+  "validation": {"start": "2025-01-01", "end": "2025-01-03"},
+  "lockbox": {"start": "2025-01-04", "end": "2025-01-05"},
+  "live_shadow_min_days": 30,
+  "live_shadow_min_trades": 100,
+  "candidate_top_k": 3,
+  "notes": []
+}"#,
+    )
+    .expect("protocol");
+    let protocol_hash = load_json::<ResearchProtocol>(&protocol)
+        .expect("load protocol")
+        .hash()
+        .expect("protocol hash");
+    std::fs::write(
+        &formula_manifest,
+        format!(
+            r#"{{
+  "schema_version": 1,
+  "created_at": "2026-05-14T00:00:00Z",
+  "source_output_dir_sha256": "source",
+  "source_run_manifest_sha256": null,
+  "source_run_identity_hash": null,
+  "source_date_start": "2024-12-29",
+  "source_date_end": "2024-12-31",
+  "target": "2x_atr_tp_atr_stop",
+  "direction": "long",
+  "rank_by": "total-return",
+  "min_sample_size": 1,
+  "min_win_rate": 0.0,
+  "max_drawdown": 1000.0,
+  "min_calmar": null,
+  "requested_limit": 3,
+  "exported_rows": 3,
+  "formulas_sha256": "fixture",
+  "protocol_sha256": "{protocol_hash}"
+}}"#
+        ),
+    )
+    .expect("formula manifest");
+
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let mut cmd = barsmith_cmd();
+    let status = cmd
+        .args([
+            "eval-formulas",
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--formulas",
+            formulas.to_str().expect("formulas"),
+            "--target",
+            "2x_atr_tp_atr_stop",
+            "--stacking-mode",
+            "no-stacking",
+            "--cutoff",
+            "2024-12-31",
+            "--stage",
+            "validation",
+            "--strict-protocol",
+            "--research-protocol",
+            protocol.to_str().expect("protocol"),
+            "--formula-export-manifest",
+            formula_manifest.to_str().expect("manifest"),
+            "--candidate-top-k",
+            "3",
+            "--pre-min-trades",
+            "1",
+            "--post-min-trades",
+            "1",
+            "--post-warn-below-trades",
+            "1",
+            "--max-contracts",
+            "2",
+            "--runs-root",
+            runs_root.to_str().expect("runs"),
+            "--dataset-id",
+            "tiny forward",
+            "--run-id",
+            "strict smoke",
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn strict eval");
+
+    assert!(status.success(), "strict eval exited with {status:?}");
+    let output_dir = runs_root
+        .join("forward-test")
+        .join("2x_atr_tp_atr_stop")
+        .join("tiny_forward")
+        .join("2024-12-31")
+        .join("strict_smoke");
+    for path in [
+        output_dir.join("protocol_validation.json"),
+        output_dir.join("overfit_report.json"),
+        output_dir.join("stress_report.json"),
+        output_dir.join("reports").join("overfit.md"),
+        output_dir.join("reports").join("stress.md"),
+    ] {
+        assert!(path.exists(), "expected {}", path.display());
+    }
+    let registry = std::fs::read_to_string(
+        registry_dir
+            .join("forward-test")
+            .join("2x_atr_tp_atr_stop")
+            .join("tiny_forward")
+            .join("2024-12-31")
+            .join("strict_smoke.json"),
+    )
+    .expect("registry");
+    assert!(registry.contains("\"protocol_sha256\""));
+    assert!(registry.contains("\"overfit_status\""));
+    assert!(registry.contains("\"stress_status\""));
+    let stress_matrix =
+        std::fs::read_to_string(output_dir.join("stress_matrix.csv")).expect("stress matrix");
+    assert!(stress_matrix.contains("half_max_contracts"));
+}
+
+#[test]
+fn cli_eval_formulas_lockbox_rejects_multi_formula_files() {
+    let temp_dir = tempdir().expect("temp output dir");
+    let prepared = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_prepared.csv");
+    let formulas = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_formulas.txt");
+
+    let mut cmd = barsmith_cmd();
+    let output = cmd
+        .args([
+            "eval-formulas",
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--formulas",
+            formulas.to_str().expect("formulas"),
+            "--target",
+            "2x_atr_tp_atr_stop",
+            "--stage",
+            "lockbox",
+            "--output-dir",
+            temp_dir.path().join("lockbox").to_str().expect("output"),
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to spawn lockbox eval");
+
+    assert!(
+        !output.status.success(),
+        "lockbox should reject multi-formula files"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("requires exactly one frozen formula"),
+        "unexpected lockbox stderr: {stderr}"
     );
 }
 
@@ -301,6 +588,9 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
     let temp_dir = tempdir().expect("temp output dir");
     let csv_out = temp_dir.path().join("formula_results.csv");
     let json_out = temp_dir.path().join("formula_results.json");
+    let selection_out = temp_dir.path().join("selection_report.json");
+    let selection_decisions_out = temp_dir.path().join("selection_decisions.csv");
+    let selected_formulas_out = temp_dir.path().join("selected_formulas.txt");
     let frs_out = temp_dir.path().join("frs.csv");
     let frs_windows_out = temp_dir.path().join("frs_windows.csv");
     let curves_out = temp_dir.path().join("curves.csv");
@@ -327,6 +617,14 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
             csv_out.to_str().expect("csv"),
             "--json-out",
             json_out.to_str().expect("json"),
+            "--selection-out",
+            selection_out.to_str().expect("selection"),
+            "--selection-decisions-out",
+            selection_decisions_out
+                .to_str()
+                .expect("selection decisions"),
+            "--selected-formulas-out",
+            selected_formulas_out.to_str().expect("selected formulas"),
             "--frs-out",
             frs_out.to_str().expect("frs"),
             "--frs-windows-out",
@@ -347,6 +645,9 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
     for path in [
         &csv_out,
         &json_out,
+        &selection_out,
+        &selection_decisions_out,
+        &selected_formulas_out,
         &frs_out,
         &frs_windows_out,
         &curves_out,
@@ -424,8 +725,12 @@ fn cli_eval_formulas_writes_standard_forward_test_folder_and_registry() {
         output_dir.join("run_manifest.json"),
         output_dir.join("checksums.sha256"),
         output_dir.join("reports").join("summary.md"),
+        output_dir.join("reports").join("selection.md"),
         output_dir.join("formula_results.csv"),
         output_dir.join("formula_results.json"),
+        output_dir.join("selection_report.json"),
+        output_dir.join("selection_decisions.csv"),
+        output_dir.join("selected_formulas.txt"),
         output_dir.join("frs_summary.csv"),
         output_dir.join("frs_windows.csv"),
         output_dir.join("equity_curves.csv"),
@@ -451,6 +756,8 @@ fn cli_eval_formulas_writes_standard_forward_test_folder_and_registry() {
     assert!(registry.contains("\"formula_sha256\""));
     assert!(registry.contains("\"prepared_sha256\""));
     assert!(registry.contains("\"formulas_sha256\""));
+    assert!(registry.contains("\"selection_status\""));
+    assert!(registry.contains("\"diagnostic_top_post_formula_sha256\""));
     assert!(
         !registry.contains("\"calmar_equity\": null"),
         "registry should preserve non-finite metric values explicitly: {registry}"
@@ -464,6 +771,8 @@ fn cli_eval_formulas_writes_standard_forward_test_folder_and_registry() {
     let checksums =
         std::fs::read_to_string(output_dir.join("checksums.sha256")).expect("checksums");
     assert!(checksums.contains("reports/summary.md"));
+    assert!(checksums.contains("reports/selection.md"));
+    assert!(checksums.contains("selection_report.json"));
     assert!(checksums.contains("formula_results.csv"));
     assert!(checksums.contains("plots/equity_curves.png"));
 }

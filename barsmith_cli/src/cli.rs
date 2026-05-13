@@ -11,6 +11,8 @@ use barsmith_rs::config::{
     StopDistanceUnit,
 };
 use barsmith_rs::formula_eval::{EquityCurveWindowSelection, FrsScope, RankBy};
+use barsmith_rs::protocol::ResearchStage;
+use barsmith_rs::selection::SelectionMode;
 
 const DEFAULT_CAPITAL_DOLLAR: f64 = 100_000.0;
 const DEFAULT_RISK_PCT_PER_TRADE: f64 = 1.0;
@@ -26,6 +28,8 @@ pub struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+// Clap builds this once at startup, so variant size is not on a hot path.
+#[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// Run feature combination search over an engineered dataset
     #[command(name = "comb")]
@@ -36,6 +40,73 @@ pub enum Commands {
     /// Query a cumulative Barsmith result store
     #[command(name = "results")]
     Results(ResultsArgs),
+    /// Create and inspect strict research protocol manifests
+    #[command(subcommand, name = "protocol")]
+    Protocol(ProtocolCommand),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ProtocolCommand {
+    /// Create a research_protocol.json file
+    #[command(name = "init")]
+    Init(Box<ProtocolInitArgs>),
+    /// Validate a research protocol file
+    #[command(name = "validate")]
+    Validate(ProtocolValidateArgs),
+    /// Print the important protocol fields
+    #[command(name = "explain")]
+    Explain(ProtocolValidateArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ProtocolInitArgs {
+    /// Output path for research_protocol.json.
+    #[arg(long = "output", value_hint = clap::ValueHint::FilePath)]
+    pub output: PathBuf,
+
+    /// Dataset identifier used by standard Barsmith run folders.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: String,
+
+    /// Target identifier.
+    #[arg(long = "target")]
+    pub target: String,
+
+    /// Optional direction label for the discovery run.
+    #[arg(long = "direction")]
+    pub direction: Option<String>,
+
+    /// Optional feature-engineering engine label.
+    #[arg(long = "engine")]
+    pub engine: Option<String>,
+
+    #[arg(long = "discovery-start")]
+    pub discovery_start: Option<String>,
+
+    #[arg(long = "discovery-end")]
+    pub discovery_end: Option<String>,
+
+    #[arg(long = "validation-start")]
+    pub validation_start: Option<String>,
+
+    #[arg(long = "validation-end")]
+    pub validation_end: Option<String>,
+
+    #[arg(long = "lockbox-start")]
+    pub lockbox_start: Option<String>,
+
+    #[arg(long = "lockbox-end")]
+    pub lockbox_end: Option<String>,
+
+    #[arg(long = "candidate-top-k")]
+    pub candidate_top_k: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct ProtocolValidateArgs {
+    /// Path to research_protocol.json.
+    #[arg(long = "protocol", value_hint = clap::ValueHint::FilePath)]
+    pub protocol: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -51,6 +122,29 @@ pub struct EvalFormulasArgs {
     /// Target column name in the prepared CSV
     #[arg(long, default_value = "2x_atr_tp_atr_stop")]
     pub target: String,
+
+    /// Research stage for strict overfit-resistant workflows.
+    #[arg(long = "stage", value_enum, default_value = "validation")]
+    pub stage: ResearchStageValue,
+
+    /// Research protocol JSON used by --strict-protocol.
+    #[arg(long = "research-protocol", value_hint = clap::ValueHint::FilePath)]
+    pub research_protocol: Option<PathBuf>,
+
+    /// Enforce protocol, formula provenance, and stage-specific constraints.
+    #[arg(long = "strict-protocol", default_value_t = false)]
+    pub strict_protocol: bool,
+
+    /// Formula export manifest produced by `results --export-formulas`.
+    #[arg(
+        long = "formula-export-manifest",
+        value_hint = clap::ValueHint::FilePath
+    )]
+    pub formula_export_manifest: Option<PathBuf>,
+
+    /// Acknowledge that this lockbox formula/protocol was evaluated before.
+    #[arg(long = "ack-rerun-lockbox", default_value_t = false)]
+    pub ack_rerun_lockbox: bool,
 
     /// Optional RR column override. Defaults to `rr_<target>`.
     #[arg(long = "rr-column")]
@@ -137,9 +231,90 @@ pub struct EvalFormulasArgs {
     #[arg(long = "json-out", value_hint = clap::ValueHint::FilePath)]
     pub json_out: Option<PathBuf>,
 
+    /// Optional selection report JSON output path.
+    #[arg(long = "selection-out", value_hint = clap::ValueHint::FilePath)]
+    pub selection_out: Option<PathBuf>,
+
+    /// Optional selection decisions CSV output path.
+    #[arg(long = "selection-decisions-out", value_hint = clap::ValueHint::FilePath)]
+    pub selection_decisions_out: Option<PathBuf>,
+
+    /// Optional selected formula text output path.
+    #[arg(long = "selected-formulas-out", value_hint = clap::ValueHint::FilePath)]
+    pub selected_formulas_out: Option<PathBuf>,
+
+    /// Optional strict-protocol validation JSON output path.
+    #[arg(long = "protocol-validation-out", value_hint = clap::ValueHint::FilePath)]
+    pub protocol_validation_out: Option<PathBuf>,
+
     /// Primary ranking metric for the post window.
     #[arg(long = "rank-by", value_enum, default_value = "frs")]
     pub rank_by: FormulaRankByValue,
+
+    /// Selection protocol for choosing formulas after pre/post evaluation.
+    #[arg(long = "selection-mode", value_enum, default_value = "holdout-confirm")]
+    pub selection_mode: SelectionModeValue,
+
+    /// Number of pre-ranked formulas eligible for selection.
+    #[arg(long = "candidate-top-k", default_value_t = 1_000)]
+    pub candidate_top_k: usize,
+
+    /// Minimum pre-window trades required for selection.
+    #[arg(long = "pre-min-trades", default_value_t = 100)]
+    pub pre_min_trades: usize,
+
+    /// Minimum post-window trades required for holdout confirmation.
+    #[arg(long = "post-min-trades", default_value_t = 30)]
+    pub post_min_trades: usize,
+
+    /// Emit a warning when post trades are below this floor.
+    #[arg(long = "post-warn-below-trades", default_value_t = 50)]
+    pub post_warn_below_trades: usize,
+
+    #[arg(long = "pre-min-total-r", default_value_t = 0.0)]
+    pub pre_min_total_r: f64,
+
+    #[arg(long = "post-min-total-r", default_value_t = 0.0)]
+    pub post_min_total_r: f64,
+
+    #[arg(long = "pre-min-expectancy", default_value_t = 0.0)]
+    pub pre_min_expectancy: f64,
+
+    #[arg(long = "post-min-expectancy", default_value_t = 0.0)]
+    pub post_min_expectancy: f64,
+
+    /// Optional drawdown ceiling used by selection gates.
+    #[arg(long = "max-drawdown-r")]
+    pub selection_max_drawdown_r: Option<f64>,
+
+    #[arg(long = "min-pre-frs", default_value_t = 0.0)]
+    pub min_pre_frs: f64,
+
+    #[arg(long = "max-return-degradation", default_value_t = 0.25)]
+    pub max_return_degradation: f64,
+
+    #[arg(long = "max-single-trade-contribution")]
+    pub max_single_trade_contribution: Option<f64>,
+
+    /// Reject selected candidates deeper than this formula depth.
+    #[arg(long = "max-formula-depth")]
+    pub max_formula_depth: Option<usize>,
+
+    /// Reject selected candidates below this trade density.
+    #[arg(long = "min-density-per-1000-bars")]
+    pub min_density_per_1000_bars: Option<f64>,
+
+    /// Penalize deeper formulas in overfit reports without changing raw metrics.
+    #[arg(long = "complexity-penalty", default_value_t = 0.0)]
+    pub complexity_penalty: f64,
+
+    /// Bars to skip after the cutoff before post-window evaluation starts.
+    #[arg(long = "embargo-bars", default_value_t = 0)]
+    pub embargo_bars: usize,
+
+    /// Disable purging rows whose trade exit crosses a window boundary.
+    #[arg(long = "no-purge-cross-boundary-exits", default_value_t = false)]
+    pub no_purge_cross_boundary_exits: bool,
 
     /// Disable Forward Robustness Score.
     #[arg(long = "no-frs", default_value_t = false)]
@@ -177,6 +352,70 @@ pub struct EvalFormulasArgs {
     /// Optional FRS per-window CSV output path.
     #[arg(long = "frs-windows-out", value_hint = clap::ValueHint::FilePath)]
     pub frs_windows_out: Option<PathBuf>,
+
+    /// Compute multiple-testing and CSCV/PBO diagnostics.
+    #[arg(long = "overfit-report", default_value_t = false)]
+    pub overfit_report: bool,
+
+    /// Optional overfit report JSON output path.
+    #[arg(long = "overfit-out", value_hint = clap::ValueHint::FilePath)]
+    pub overfit_out: Option<PathBuf>,
+
+    /// Optional overfit decisions CSV output path.
+    #[arg(long = "overfit-decisions-out", value_hint = clap::ValueHint::FilePath)]
+    pub overfit_decisions_out: Option<PathBuf>,
+
+    /// Number of chronological CSCV blocks for PBO diagnostics.
+    #[arg(long = "cscv-blocks", default_value_t = 6)]
+    pub cscv_blocks: usize,
+
+    /// Maximum CSCV splits to evaluate.
+    #[arg(long = "cscv-max-splits", default_value_t = 64)]
+    pub cscv_max_splits: usize,
+
+    /// Candidate cap used by overfit diagnostics.
+    #[arg(long = "overfit-candidate-top-k", default_value_t = 100)]
+    pub overfit_candidate_top_k: usize,
+
+    /// Fail overfit diagnostics when PBO exceeds this value.
+    #[arg(long = "max-pbo", default_value_t = 0.25)]
+    pub max_pbo: f64,
+
+    /// Fail overfit diagnostics when PSR is below this value.
+    #[arg(long = "min-psr", default_value_t = 0.95)]
+    pub min_psr: f64,
+
+    /// Fail overfit diagnostics when DSR is below this value.
+    #[arg(long = "min-dsr", default_value_t = 0.95)]
+    pub min_dsr: f64,
+
+    /// Fail overfit diagnostics below this positive block ratio.
+    #[arg(long = "min-positive-window-ratio", default_value_t = 0.5)]
+    pub min_positive_window_ratio: f64,
+
+    /// Override the effective trial count used by Deflated Sharpe.
+    #[arg(long = "effective-trials")]
+    pub effective_trials: Option<usize>,
+
+    /// Compute execution stress diagnostics.
+    #[arg(long = "stress-report", default_value_t = false)]
+    pub stress_report: bool,
+
+    /// Optional stress report JSON output path.
+    #[arg(long = "stress-out", value_hint = clap::ValueHint::FilePath)]
+    pub stress_out: Option<PathBuf>,
+
+    /// Optional stress matrix CSV output path.
+    #[arg(long = "stress-matrix-out", value_hint = clap::ValueHint::FilePath)]
+    pub stress_matrix_out: Option<PathBuf>,
+
+    /// Fail stress diagnostics when worst stressed Total R is below this value.
+    #[arg(long = "stress-min-total-r", default_value_t = 0.0)]
+    pub stress_min_total_r: f64,
+
+    /// Fail stress diagnostics when worst stressed expectancy is below this value.
+    #[arg(long = "stress-min-expectancy", default_value_t = 0.0)]
+    pub stress_min_expectancy: f64,
 
     /// Export equity curves for the top K strategies. Use 0 to disable.
     #[arg(long = "equity-curves-top-k", default_value_t = 10)]
@@ -294,6 +533,26 @@ pub struct ResultsArgs {
 
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
+
+    /// Write the query result as a ranked formula file for eval-formulas.
+    #[arg(long = "export-formulas", value_hint = clap::ValueHint::FilePath)]
+    pub export_formulas: Option<PathBuf>,
+
+    /// Write formula-export provenance metadata to this path.
+    #[arg(
+        long = "export-formula-manifest",
+        value_hint = clap::ValueHint::FilePath,
+        requires = "export_formulas"
+    )]
+    pub export_formula_manifest: Option<PathBuf>,
+
+    /// Optional research protocol to bind into the formula-export manifest.
+    #[arg(
+        long = "research-protocol",
+        value_hint = clap::ValueHint::FilePath,
+        requires = "export_formulas"
+    )]
+    pub research_protocol: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -309,6 +568,11 @@ pub struct CombArgs {
     /// Target generator identifier
     #[arg(long, default_value = "next_bar_color_and_wicks")]
     pub target: String,
+
+    /// Feature-engineering engine. `auto` uses the builtin engine for simple
+    /// next-bar targets and the custom engine for richer prepared targets.
+    #[arg(long = "engine", value_enum, default_value = "auto")]
+    pub engine: EngineValue,
 
     /// Output directory for cumulative artefacts.
     ///
@@ -883,6 +1147,45 @@ impl FormulaRankByValue {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum SelectionModeValue {
+    Off,
+    #[value(name = "holdout-confirm")]
+    HoldoutConfirm,
+    #[value(name = "validation-rank")]
+    ValidationRank,
+}
+
+impl SelectionModeValue {
+    pub fn to_mode(self) -> SelectionMode {
+        match self {
+            Self::Off => SelectionMode::Off,
+            Self::HoldoutConfirm => SelectionMode::HoldoutConfirm,
+            Self::ValidationRank => SelectionMode::ValidationRank,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum ResearchStageValue {
+    Discovery,
+    Validation,
+    Lockbox,
+    #[value(name = "live-shadow")]
+    LiveShadow,
+}
+
+impl ResearchStageValue {
+    pub fn to_stage(self) -> ResearchStage {
+        match self {
+            Self::Discovery => ResearchStage::Discovery,
+            Self::Validation => ResearchStage::Validation,
+            Self::Lockbox => ResearchStage::Lockbox,
+            Self::LiveShadow => ResearchStage::LiveShadow,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ResultRankByValue {
     #[value(name = "calmar-ratio")]
@@ -968,6 +1271,13 @@ pub enum PlotXValue {
 pub enum PlotMetricValue {
     Dollar,
     R,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum EngineValue {
+    Auto,
+    Builtin,
+    Custom,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -1056,6 +1366,7 @@ mod tests {
             csv_path: PathBuf::from("dummy.csv"),
             direction: DirectionValue::Long,
             target: "next_bar_color_and_wicks".to_string(),
+            engine: EngineValue::Auto,
             output_dir: Some(PathBuf::from("out")),
             runs_root: None,
             dataset_id: None,

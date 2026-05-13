@@ -23,19 +23,22 @@ Currently supported by the default CLI:
 - OHLCV CSV input.
 - AND-only feature combinations.
 - Builtin targets: `next_bar_up`, `next_bar_down`, and `next_bar_color_and_wicks`.
+- Custom-engine targets through `--engine auto|custom`, including `2x_atr_tp_atr_stop`.
 - Ranked formula evaluation against an existing `barsmith_prepared.csv`.
-- Rust-native result querying, FRS exports, equity-curve exports, and optional PNG plots.
+- Rust-native result querying, formula export, strict protocol manifests, overfit diagnostics, stress diagnostics, FRS exports, equity-curve exports, selection reports, and optional PNG plots.
 - Local filesystem outputs, with optional `aws s3 cp` uploads.
 
 Not supported by the default CLI:
 - OR/mixed combination logic.
 - Broker connectivity, order routing, or live execution.
-- Arbitrary custom targets unless they are provided through a prepared dataset or custom engine.
+- Arbitrary custom targets unless they are provided through a prepared dataset or implemented in a Rust engine.
 
 ## Key features
 
 - **Combination search (`comb`)**: AND-only feature logic, depth limits, min-sample gating, optional feature-pairs, resume offsets.
 - **Formula evaluation (`eval-formulas`)**: evaluate ranked formulas on a prepared dataset with the same stacking, sizing, cost, and equity semantics used by Barsmith.
+- **Holdout-aware selection**: default pre-ranked, post-confirmed formula selection with explicit gate artifacts.
+- **Strict research workflow**: protocol manifests, formula-export provenance, validation/lockbox/live-shadow stages, PBO/CSCV, PSR/DSR, and stress reports for overfit-resistant research.
 - **Resume & durability**: incremental Parquet parts + a DuckDB view for fast `top results` queries.
 - **Rust-native reporting**: query cumulative result stores and export formula results, FRS windows, equity curves, and optional plots without external scripts.
 - **Deterministic runs**: stable CSV fingerprinting and run identity manifests to prevent accidental resume on incompatible inputs or settings.
@@ -158,6 +161,19 @@ This writes forward-test artifacts under
 `runs/artifacts/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/` and a
 lightweight registry record under
 `runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`.
+The default selection protocol chooses from the pre-window ranking and uses the
+post window as confirmation evidence. Selection outputs include
+`selection_report.json`, `selection_decisions.csv`, `selected_formulas.txt`, and
+`reports/selection.md`.
+
+For overfit-resistant research, create `research_protocol.json` with
+`barsmith_cli protocol init`, export formulas from a discovery/pre-only `comb`
+run with `results --export-formulas --research-protocol research_protocol.json`,
+and pass `--strict-protocol --research-protocol research_protocol.json
+--formula-export-manifest formula_export_manifest.json` to validation and lockbox
+runs. Strict runs reject stale or unbound manifests and add protocol validation,
+overfit diagnostics, stress diagnostics, and lockbox reports without storing raw
+formulas in Git-safe registry records.
 
 Formula files use one AND-only expression per line, for example:
 
@@ -237,7 +253,10 @@ The default CLI uses `barsmith_builtin` for feature engineering + target labelin
 - `--target next_bar_down` (boolean)
 - `--target next_bar_color_and_wicks` (compatibility alias for `next_bar_up`)
 
-For richer feature sets/targets, use `barsmith_rs` as a library and provide your own “prepared dataset” (see the requirements above), or treat `custom_rs` as an example engine.
+For richer feature sets/targets, use `--engine auto` (default) or
+`--engine custom` for targets implemented by `custom_rs`, including
+`2x_atr_tp_atr_stop`. You can also use `barsmith_rs` as a library and provide
+your own prepared dataset (see the requirements above).
 
 ## Validation
 
@@ -329,8 +348,8 @@ caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.cs
 
 - `barsmith_rs/`: core library (data loading, combination enumeration, evaluation, storage).
 - `barsmith_builtin/`: minimal built-in feature engineering + targets (used by the default CLI).
-- `barsmith_cli/`: CLI (`comb`).
-- `custom_rs/`: richer example feature engineering + targets (not required for the default CLI; treated as an example/experimental engine).
+- `barsmith_cli/`: CLI (`comb`, `eval-formulas`, and `results`).
+- `custom_rs/`: richer Rust feature engineering + targets used by `--engine custom` and by `--engine auto` for non-builtin targets.
 - `tests/`: repository-level fixtures used by smoke tests.
 - `benchmarks/`: benchmark fixture manifest docs and local smoke commands.
 - `docs/`: user, contributor, architecture, testing, and migration docs.

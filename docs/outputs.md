@@ -62,6 +62,14 @@ Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
             barsmith.log
             formula_results.csv
             formula_results.json
+            selection_report.json
+            selection_decisions.csv
+            selected_formulas.txt
+            protocol_validation.json
+            overfit_report.json
+            overfit_decisions.csv
+            stress_report.json
+            stress_matrix.csv
             frs_summary.csv
             frs_windows.csv
             equity_curves.csv
@@ -69,6 +77,10 @@ Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
               equity_curves.png
             reports/
               summary.md
+              selection.md
+              overfit.md
+              stress.md
+              lockbox.md
 ```
 
 The matching registry record is written at
@@ -79,6 +91,13 @@ Common forward-test outputs are:
 
 - formula result CSV: pre/post rankings and strategy metrics
 - formula result JSON: full structured report for downstream tools
+- selection report JSON: selected candidate, policy, warnings, and per-candidate decisions
+- selection decisions CSV: one row per pre-ranked candidate with pass/fail reasons
+- selected formulas text: a one-formula ranked file for downstream lockbox runs
+- protocol validation JSON: strict protocol and provenance decision details
+- overfit report JSON/CSV/Markdown: effective trials, PBO/CSCV, PSR, DSR, and warnings
+- stress report JSON/CSV/Markdown: cost, slippage, and sizing stress scenarios with pass/fail status
+- selection markdown: human-readable selection summary under `reports/selection.md`
 - FRS summary CSV: one row per formula and FRS scope
 - FRS window CSV: annual/window components used by FRS
 - equity-curve CSV: selected trades and cumulative equity for top formulas
@@ -109,6 +128,12 @@ barsmith_cli results \
   --rank-by total-return \
   --limit 20
 ```
+
+Add `--export-formulas formulas.txt` to write the query as a ranked formula file
+for `eval-formulas`. Use a discovery/pre-only source run when the exported file
+will feed a holdout confirmation. The export includes comment metadata and a
+research note; `eval-formulas` ignores those comments. The command also writes
+`formula_export_manifest.json` for strict protocol validation.
 
 You can also query `cumulative.duckdb` with DuckDB’s CLI:
 

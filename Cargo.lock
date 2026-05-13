@@ -439,6 +439,7 @@ dependencies = [
  "chrono",
  "clap",
  "csv",
+ "custom_rs",
  "hex",
  "libc",
  "plotters",

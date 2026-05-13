@@ -10,12 +10,16 @@ pub mod formula;
 pub mod formula_eval;
 pub mod frs;
 pub mod mask;
+pub mod overfit;
 pub mod pipeline;
 pub mod progress;
+pub mod protocol;
 mod run_identity;
 pub mod s3;
+pub mod selection;
 pub mod stats;
 pub mod storage;
+pub mod stress;
 mod subset_pruning;
 
 pub use config::{Config, Direction, ReportMetricsMode};

@@ -30,3 +30,12 @@ Required/recognized columns:
 - `<target>_exit_i` (required when `--stacking-mode no-stacking`): integer “next index” used to skip overlapping trades
 
 If you want to supply your own prepared dataset (custom feature engineering / targets), ensure the above contract is satisfied for the chosen `--target`.
+
+For forward tests, Barsmith can purge rows whose exit index leaves the filtered
+evaluation window. Keep exit indices in original row coordinates when writing a
+prepared dataset; Barsmith remaps them after date filtering or row slicing.
+
+For custom-engine `comb` runs, date filters are applied after the raw engineered
+dataset is prepared. The searchable feature catalog is then fitted from the
+filtered evaluation window so scalar thresholds are not learned from rows
+outside the requested in-sample date range.

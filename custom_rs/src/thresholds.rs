@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+#[cfg(test)]
 use std::path::Path;
 
 use crate::features::CONTINUOUS_FEATURES;
 use anyhow::{Context, Result, anyhow};
 use barsmith_rs::feature::{ComparisonOperator, ComparisonSpec, FeatureDescriptor};
 use polars::prelude::*;
+#[cfg(test)]
 use polars_io::prelude::CsvReadOptions;
 use serde::Deserialize;
 use tracing::info;
@@ -27,19 +29,18 @@ pub struct ThresholdCatalog {
     pub specs: HashMap<String, ComparisonSpec>,
 }
 
-pub fn generate_threshold_catalog(dataset_path: &Path) -> Result<ThresholdCatalog> {
-    generate_threshold_catalog_from_ranges_json(dataset_path, FEATURE_RANGES_JSON)
+pub fn generate_threshold_catalog_from_frame(
+    df: &DataFrame,
+    dataset_label: &str,
+) -> Result<ThresholdCatalog> {
+    generate_threshold_catalog_from_frame_and_ranges_json(df, dataset_label, FEATURE_RANGES_JSON)
 }
 
+#[cfg(test)]
 fn generate_threshold_catalog_from_ranges_json(
     dataset_path: &Path,
     ranges_json: &str,
 ) -> Result<ThresholdCatalog> {
-    let ranges = parse_feature_ranges_json(ranges_json)?;
-
-    // Align feature_ranges.json with the Rust continuous feature list.
-    audit_feature_ranges_vs_continuous(&ranges);
-
     let dataset_display = dataset_path.display().to_string();
     let df = CsvReadOptions::default()
         .with_has_header(true)
@@ -48,6 +49,23 @@ fn generate_threshold_catalog_from_ranges_json(
         .with_context(|| format!("unable to initialize CSV reader for {dataset_display}"))?
         .finish()
         .context("unable to read engineered dataset for threshold generation")?;
+
+    generate_threshold_catalog_from_frame_and_ranges_json(&df, &dataset_display, ranges_json)
+}
+
+fn generate_threshold_catalog_from_frame_and_ranges_json(
+    df: &DataFrame,
+    dataset_display: &str,
+    ranges_json: &str,
+) -> Result<ThresholdCatalog> {
+    let ranges = parse_feature_ranges_json(ranges_json)?;
+
+    audit_feature_ranges_vs_continuous(&ranges);
+    info!(
+        dataset = %dataset_display,
+        rows = df.height(),
+        "Generating scalar threshold catalog"
+    );
 
     let mut descriptors = Vec::new();
     let mut specs = HashMap::new();

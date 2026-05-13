@@ -29,7 +29,8 @@ Use `comb` when you want Barsmith to engineer features, enumerate combinations, 
 - `--registry-dir <DIR>`: write a lightweight audit registry JSON record under `comb/<target>/<direction>/<dataset-id>/<run-id>.json`
 - `--artifact-uri <URI>`: durable storage location recorded in command and registry metadata
 - `--checksum-artifacts`: include Parquet, DuckDB, and log files in `checksums.sha256`
-- `--target <NAME>`: target identifier (builtin engine supports: `next_bar_up`, `next_bar_down`, `next_bar_color_and_wicks`)
+- `--target <NAME>`: target identifier
+- `--engine auto|builtin|custom`: feature-engineering engine. `auto` uses the builtin engine for next-bar targets and the custom engine for richer Rust targets.
 - `--direction long|short|both`: filter which side is evaluated
 
 For new research runs, prefer `--runs-root` plus `--registry-dir`:
@@ -48,6 +49,13 @@ barsmith_cli comb \
 The generated registry record is safe for Git by design: it stores a portable
 run path, formula hash, and metrics, not local artifact paths, raw formula text,
 or run artifacts.
+
+Builtin-engine targets are `next_bar_up`, `next_bar_down`, and
+`next_bar_color_and_wicks`. Custom-engine targets include
+`next_bar_color_and_wicks`, `wicks_kf`, `highlow_or_atr`, `highlow_1r`,
+`2x_atr_tp_atr_stop`, `3x_atr_tp_atr_stop`, `atr_tp_atr_stop`,
+`highlow_sl_2x_atr_tp_rr_gt_1`, `highlow_sl_1x_atr_tp_rr_gt_1`,
+`highlow_or_atr_tightest_stop`, and `tribar_4h_2atr`.
 
 ### Enumeration
 
@@ -147,6 +155,11 @@ Important flags:
 
 - `--prepared <FILE>`: existing prepared dataset.
 - `--formulas <FILE>`: ranked formula file.
+- `--stage discovery|validation|lockbox|live-shadow`: research stage. `lockbox` and `live-shadow` require exactly one formula.
+- `--strict-protocol`: enforce protocol and formula-export provenance.
+- `--research-protocol <FILE>`: strict research protocol JSON.
+- `--formula-export-manifest <FILE>`: provenance sidecar written by `results --export-formulas`.
+- `--ack-rerun-lockbox`: record a repeated lockbox attempt as contaminated rerun evidence.
 - `--output-dir <DIR>`: explicit forward-test run folder.
 - `--runs-root <DIR>`: build the standard forward-test folder as `<runs-root>/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/`.
 - `--dataset-id <ID>`: dataset label for standard output paths.
@@ -161,6 +174,26 @@ Important flags:
 - `--rank-by frs|calmar-equity`: post-window ranking metric.
 - `--no-frs`: skip Forward Robustness Score.
 - `--frs-scope window|pre|post|all`: calendar windows used for FRS.
+- `--selection-mode holdout-confirm|validation-rank|off`: selection protocol. Default `holdout-confirm` chooses by pre rank and uses post metrics only as gates.
+- `--candidate-top-k <N>`: number of pre-ranked formulas eligible for selection. Default `1000`.
+- `--pre-min-trades <N>` / `--post-min-trades <N>`: trade-count selection floors. Defaults `100` and `30`.
+- `--post-warn-below-trades <N>`: warning-only post trade-count floor. Default `50`.
+- `--pre-min-total-r`, `--post-min-total-r`, `--pre-min-expectancy`, `--post-min-expectancy`: profitability gates.
+- `--max-drawdown-r <R>`: optional drawdown ceiling for selected candidates.
+- `--min-pre-frs <X>`: pre-window FRS floor when FRS is enabled.
+- `--max-return-degradation <RATIO>`: minimum allowed post/pre Total R ratio. Default `0.25`.
+- `--max-single-trade-contribution <RATIO>`: optional concentration guard against one trade dominating Total R.
+- `--max-formula-depth <N>`: optional complexity ceiling for selected candidates.
+- `--min-density-per-1000-bars <N>`: optional trade-density floor for selected candidates.
+- `--complexity-penalty <R>`: depth penalty used by overfit diagnostics.
+- `--embargo-bars <N>`: skip N rows after the cutoff before post-window evaluation starts.
+- `--no-purge-cross-boundary-exits`: diagnostic escape hatch; by default rows whose trade exit leaves the evaluation window are purged.
+- `--overfit-report`: compute PBO/CSCV, PSR, DSR, effective-trials, and stability diagnostics. Enabled automatically by `--strict-protocol`.
+- `--cscv-blocks <N>` / `--cscv-max-splits <N>`: bounds for CSCV/PBO diagnostics.
+- `--max-pbo`, `--min-psr`, `--min-dsr`, `--min-positive-window-ratio`: overfit gates.
+- `--effective-trials <N>`: override trial count for Deflated Sharpe.
+- `--stress-report`: compute cost/slippage/sizing stress diagnostics. Enabled automatically by `--strict-protocol`.
+- `--stress-min-total-r`, `--stress-min-expectancy`: stress gates.
 - `--position-sizing fractional|contracts`: equity simulation mode. Defaults to `fractional`.
 - `--asset <CODE>`: loads tick value, point value, margin, commission, and default slippage for known assets.
 - `--plot`: render PNG equity-curve plots from exported curve rows.
@@ -170,14 +203,24 @@ outputs into the run folder unless you override them explicitly:
 
 - `formula_results.csv`
 - `formula_results.json`
+- `selection_report.json`
+- `selection_decisions.csv`
+- `selected_formulas.txt`
+- `protocol_validation.json` when strict mode is enabled
+- `overfit_report.json` and `overfit_decisions.csv` when overfit diagnostics are enabled
+- `stress_report.json` and `stress_matrix.csv` when stress diagnostics are enabled
 - `frs_summary.csv`
 - `frs_windows.csv`
 - `equity_curves.csv`
 - `plots/equity_curves.png` for combined plots, or `plots/` for individual plots
 - `reports/summary.md`
+- `reports/selection.md`
+- `reports/overfit.md`, `reports/stress.md`, and `reports/lockbox.md` when applicable
 - `command.txt`, `command.json`, `run_manifest.json`, and `checksums.sha256`
 
 Contract sizing requires `--asset` and a stop-distance column. ATR-stop targets infer `--stop-distance-column atr`; other targets must provide the column explicitly.
+
+See `docs/research-protocol.md` for the recommended pre/post selection workflow and lockbox guidance.
 
 ## `results`
 
@@ -195,3 +238,28 @@ barsmith_cli results \
 ```
 
 This command reads `cumulative.duckdb` plus `results_parquet/` and prints the top combinations by `calmar-ratio` or `total-return`.
+
+Use `--export-formulas <FILE>` to write the query result as a ranked formula file that can be passed directly to `eval-formulas`. For holdout-safe research, export from a `comb` run that only searched the discovery/pre window. Formula exports include comment metadata and a research note; the formula parser ignores those comments. The command also writes `formula_export_manifest.json` by default, or the path passed to `--export-formula-manifest`.
+
+Pass `--research-protocol <FILE>` when exporting formulas for strict validation. Strict `eval-formulas` requires the manifest `protocol_sha256` to match the research protocol used for validation or lockbox evaluation.
+
+## `protocol`
+
+Use `protocol init` before discovery to create a strict research protocol:
+
+```bash
+barsmith_cli protocol init \
+  --output research_protocol.json \
+  --dataset-id es_30m_official_v2 \
+  --target 2x_atr_tp_atr_stop \
+  --direction long \
+  --engine custom \
+  --discovery-end 2024-12-31 \
+  --validation-start 2025-01-01 \
+  --validation-end 2025-06-30 \
+  --lockbox-start 2025-07-01 \
+  --lockbox-end 2025-12-31 \
+  --candidate-top-k 1000
+```
+
+Use `protocol validate --protocol research_protocol.json` for a machine check and `protocol explain --protocol research_protocol.json` for a readable summary.

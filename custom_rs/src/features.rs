@@ -3,13 +3,12 @@ use std::path::Path;
 
 use crate::thresholds;
 use anyhow::Result;
-use barsmith_rs::config::Config;
 use barsmith_rs::feature::{
     ComparisonOperator, ComparisonSpec, FeatureCategory, FeatureDescriptor,
     generate_unordered_feature_comparisons,
 };
+use barsmith_rs::{config::Config, data::ColumnarData};
 use polars::prelude::*;
-use polars_io::prelude::CsvReadOptions;
 use std::collections::HashSet;
 use tracing::info;
 
@@ -22,28 +21,23 @@ pub struct CatalogBuild {
 
 impl FeatureCatalog {
     pub fn build_with_dataset(dataset_path: &Path, config: &Config) -> Result<CatalogBuild> {
-        // Read the engineered frame once so catalog audits and pruning use the
-        // same view of the data.
         let dataset_display = dataset_path.display().to_string();
-        let df = CsvReadOptions::default()
-            .with_ignore_errors(true)
-            .with_has_header(true)
-            .try_into_reader_with_file_path(Some(dataset_path.to_path_buf()))?
-            .finish()
-            .map_err(|error| {
-                anyhow::anyhow!("Unable to read engineered dataset {dataset_display}: {error}")
-            })?;
-        audit_boolean_definitions(&df);
-        audit_boolean_coverage(&df);
-        audit_continuous_definitions(&df);
-        audit_continuous_coverage(&df);
+        let data = ColumnarData::load(dataset_path)?;
+        let data = data.filter_by_date_range(config.include_date_start, config.include_date_end)?;
+        let frame = data.data_frame();
+        let df = frame.as_ref();
+        audit_boolean_definitions(df);
+        audit_boolean_coverage(df);
+        audit_continuous_definitions(df);
+        audit_continuous_coverage(df);
 
         // Constant flags and exact duplicate masks cannot add signal, but they
         // do multiply the search.
         let mut descriptors = Self::boolean_descriptors();
-        descriptors = prune_boolean_constants_and_duplicates(descriptors, &df);
+        descriptors = prune_boolean_constants_and_duplicates(descriptors, df);
 
-        let threshold_catalog = thresholds::generate_threshold_catalog(dataset_path)?;
+        let threshold_catalog =
+            thresholds::generate_threshold_catalog_from_frame(df, &dataset_display)?;
         let mut comparison_specs = threshold_catalog.specs;
         descriptors.extend(threshold_catalog.descriptors);
 
