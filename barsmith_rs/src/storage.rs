@@ -77,6 +77,243 @@ pub struct CumulativeStore {
     strict_min_pruning: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct ResultQuery {
+    pub output_dir: PathBuf,
+    pub direction: String,
+    pub target: String,
+    pub min_sample_size: usize,
+    pub min_win_rate: f64,
+    pub max_drawdown: f64,
+    pub min_calmar: Option<f64>,
+    pub rank_by: ResultRankBy,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultRankBy {
+    CalmarRatio,
+    TotalReturn,
+}
+
+impl ResultRankBy {
+    fn order_expression(self) -> &'static str {
+        match self {
+            Self::CalmarRatio => "calmar_ratio",
+            Self::TotalReturn => "total_return",
+        }
+    }
+}
+
+pub fn query_result_store(query: &ResultQuery) -> Result<Vec<ResultRow>> {
+    let results_dir = query.output_dir.join("results_parquet");
+    if query.limit == 0 || !has_parquet_files(&results_dir)? {
+        return Ok(Vec::new());
+    }
+
+    let duckdb_path = query.output_dir.join("cumulative.duckdb");
+    if !duckdb_path.exists() {
+        return Err(anyhow!(
+            "cumulative.duckdb not found at {}",
+            duckdb_path.display()
+        ));
+    }
+
+    let conn = Connection::open(&duckdb_path)
+        .with_context(|| format!("Unable to open {}", duckdb_path.display()))?;
+    conn.execute("SET max_expression_depth TO 100000", [])?;
+    refresh_results_view(&conn, &results_dir)?;
+    let columns = describe_result_columns(&conn)?;
+
+    let select_columns = [
+        "direction".to_string(),
+        "target".to_string(),
+        "combination".to_string(),
+        "resume_offset".to_string(),
+        "depth".to_string(),
+        if columns.contains("mask_hits") {
+            "mask_hits".to_string()
+        } else {
+            "total_bars AS mask_hits".to_string()
+        },
+        "total_bars".to_string(),
+        "profitable_bars".to_string(),
+        "win_rate".to_string(),
+        select_or_default(&columns, "label_hit_rate", "0.0"),
+        select_or_default(&columns, "label_hits", "0"),
+        select_or_default(&columns, "label_misses", "0"),
+        select_or_default(&columns, "expectancy", "0.0"),
+        select_or_default(&columns, "total_return", "0.0"),
+        "max_drawdown".to_string(),
+        select_or_default(&columns, "profit_factor", "0.0"),
+        "calmar_ratio".to_string(),
+    ]
+    .join(",\n            ");
+
+    let sql_base = format!(
+        "
+        SELECT
+            {select_columns}
+        FROM results
+        WHERE total_bars >= ?
+          AND win_rate >= ?
+          AND max_drawdown <= ?
+          AND direction = ?
+          AND target = ?"
+    );
+
+    let order_expression = query.rank_by.order_expression();
+    let (sql, with_calmar) = match query.min_calmar {
+        Some(_) => (
+            format!("{sql_base} AND calmar_ratio >= ? ORDER BY {order_expression} DESC LIMIT ?"),
+            true,
+        ),
+        None => (
+            format!("{sql_base} ORDER BY {order_expression} DESC LIMIT ?"),
+            false,
+        ),
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = if with_calmar {
+        stmt.query(params![
+            query.min_sample_size as i64,
+            query.min_win_rate,
+            query.max_drawdown,
+            query.direction,
+            query.target,
+            query.min_calmar.unwrap(),
+            query.limit as i64,
+        ])?
+    } else {
+        stmt.query(params![
+            query.min_sample_size as i64,
+            query.min_win_rate,
+            query.max_drawdown,
+            query.direction,
+            query.target,
+            query.limit as i64,
+        ])?
+    };
+
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        out.push(ResultRow {
+            direction: row.get(0)?,
+            target: row.get(1)?,
+            combination: row.get(2)?,
+            resume_offset: row.get::<_, i64>(3)? as u64,
+            depth: row.get::<_, i64>(4)? as u32,
+            mask_hits: row.get::<_, i64>(5)? as u64,
+            total_bars: row.get::<_, i64>(6)? as u64,
+            profitable_bars: row.get::<_, i64>(7)? as u64,
+            win_rate: row.get(8)?,
+            label_hit_rate: row.get(9).unwrap_or(0.0),
+            label_hits: row.get::<_, i64>(10).unwrap_or(0) as u64,
+            label_misses: row.get::<_, i64>(11).unwrap_or(0) as u64,
+            expectancy: row.get(12)?,
+            total_return: row.get(13)?,
+            max_drawdown: row.get(14)?,
+            profit_factor: row.get(15)?,
+            calmar_ratio: row.get(16)?,
+            win_loss_ratio: 0.0,
+            ulcer_index: 0.0,
+            pain_ratio: 0.0,
+            max_consecutive_wins: 0,
+            max_consecutive_losses: 0,
+            avg_winning_rr: 0.0,
+            avg_win_streak: 0.0,
+            avg_loss_streak: 0.0,
+            median_rr: 0.0,
+            avg_losing_rr: 0.0,
+            p05_rr: 0.0,
+            p95_rr: 0.0,
+            largest_win: 0.0,
+            largest_loss: 0.0,
+            final_capital: 0.0,
+            total_return_pct: 0.0,
+            cagr_pct: 0.0,
+            max_drawdown_pct_equity: 0.0,
+            calmar_equity: 0.0,
+            sharpe_equity: 0.0,
+            sortino_equity: 0.0,
+        });
+    }
+
+    Ok(out)
+}
+
+fn describe_result_columns(conn: &Connection) -> Result<HashSet<String>> {
+    let mut stmt = conn.prepare("DESCRIBE results")?;
+    let mut rows = stmt.query([])?;
+    let mut columns = HashSet::new();
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(0)?;
+        columns.insert(name);
+    }
+    Ok(columns)
+}
+
+fn select_or_default(columns: &HashSet<String>, column: &str, default: &str) -> String {
+    if columns.contains(column) {
+        column.to_string()
+    } else {
+        format!("{default} AS {column}")
+    }
+}
+
+fn refresh_results_view(conn: &Connection, results_dir: &Path) -> Result<()> {
+    if !has_parquet_files(results_dir)? {
+        return Ok(());
+    }
+
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(results_dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("part-") && name.ends_with(".parquet") {
+            candidates.push(entry.path());
+        }
+    }
+    candidates.sort();
+
+    let mut good_paths = Vec::new();
+    for path in candidates {
+        let display_str = path.display().to_string();
+        let escaped = display_str.replace('\'', "''");
+        let probe_sql = format!("SELECT COUNT(*) FROM read_parquet('{escaped}')");
+        match conn.prepare(&probe_sql)?.query([]) {
+            Ok(_) => good_paths.push(escaped),
+            Err(error) => {
+                warn!(
+                    file = %display_str,
+                    ?error,
+                    "Skipping corrupt or unreadable Parquet batch"
+                );
+            }
+        }
+    }
+
+    if good_paths.is_empty() {
+        conn.execute("DROP VIEW IF EXISTS results", [])?;
+        return Ok(());
+    }
+
+    let parquet_list = good_paths
+        .iter()
+        .map(|path| format!("'{path}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    conn.execute(
+        &format!(
+            "CREATE OR REPLACE VIEW results AS \
+             SELECT * FROM read_parquet([{parquet_list}], union_by_name = true)"
+        ),
+        [],
+    )?;
+    Ok(())
+}
+
 impl CumulativeStore {
     pub fn new(config: &Config) -> Result<(Self, u64)> {
         fs::create_dir_all(&config.output_dir)?;
@@ -419,56 +656,7 @@ impl CumulativeStore {
     }
 
     pub fn refresh_view(&self) -> Result<()> {
-        if !has_parquet_files(&self.results_dir)? {
-            // No batches yet; leave any existing view in place.
-            return Ok(());
-        }
-
-        // Collect and sort candidate Parquet parts.
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        for entry in fs::read_dir(&self.results_dir)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("part-") && name.ends_with(".parquet") {
-                candidates.push(entry.path());
-            }
-        }
-        candidates.sort();
-
-        let mut good_paths: Vec<String> = Vec::new();
-        for path in candidates {
-            let display_str = path.display().to_string();
-            let escaped = display_str.replace('\'', "''");
-            let probe_sql = format!("SELECT COUNT(*) FROM read_parquet('{escaped}')");
-            match self.duckdb_conn.prepare(&probe_sql)?.query([]) {
-                Ok(_) => good_paths.push(escaped),
-                Err(error) => {
-                    warn!(
-                        file = %display_str,
-                        ?error,
-                        "Skipping corrupt or unreadable Parquet batch"
-                    );
-                }
-            }
-        }
-
-        if good_paths.is_empty() {
-            // All parts are unreadable; drop the view so downstream queries fail fast.
-            self.duckdb_conn
-                .execute("DROP VIEW IF EXISTS results", [])?;
-            return Ok(());
-        }
-
-        let mut union_sql = String::new();
-        for (idx, path) in good_paths.iter().enumerate() {
-            if idx > 0 {
-                union_sql.push_str(" UNION ALL ");
-            }
-            union_sql.push_str(&format!("SELECT * FROM read_parquet('{path}')"));
-        }
-        let view_sql = format!("CREATE OR REPLACE VIEW results AS {union_sql}");
-        self.duckdb_conn.execute(&view_sql, [])?;
-        Ok(())
+        refresh_results_view(&self.duckdb_conn, &self.results_dir)
     }
 
     fn update_metadata(&mut self, delta: i64) -> Result<()> {
@@ -560,6 +748,28 @@ impl CumulativeStore {
             stats
                 .iter()
                 .map(|stat| stat.calmar_ratio)
+                .collect::<Vec<_>>()
+        );
+        push_series!(
+            "total_return",
+            stats
+                .iter()
+                .map(|stat| stat.total_return)
+                .collect::<Vec<_>>()
+        );
+        push_series!(
+            "calmar_r",
+            stats
+                .iter()
+                .map(|stat| {
+                    if stat.max_drawdown > 0.0 {
+                        stat.total_return / stat.max_drawdown
+                    } else if stat.total_return > 0.0 {
+                        f64::INFINITY
+                    } else {
+                        0.0
+                    }
+                })
                 .collect::<Vec<_>>()
         );
 

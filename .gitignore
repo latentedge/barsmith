@@ -4,10 +4,12 @@
 
 # Outputs / caches
 /tmp/
+/runs/artifacts/
 benchmarks/local-fixtures.toml
 **/*.parquet
 **/*.duckdb
 **/*.csv
+*.log
 __pycache__/
 *.pyc
 
@@ -19,3 +21,4 @@ __pycache__/
 # Allow tracked test fixtures
 !tests/data/es_30m_sample.csv
 !tests/data/ohlcv_tiny.csv
+!barsmith_rs/tests/fixtures/*.csv

@@ -1,4 +1,8 @@
 mod cli;
+mod eval_formulas;
+mod plot;
+mod results;
+mod standard_output;
 mod stats_detail;
 
 use std::fs::OpenOptions;
@@ -182,24 +186,67 @@ fn log_invocation(log_file: Option<&PathBuf>) {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let log_file = match &cli.command {
-        Commands::Comb(args) => {
-            if args.no_file_log {
+    match cli.command {
+        Commands::Comb(mut args) => {
+            let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+            let output_plan = standard_output::resolve_comb_output(&args, &argv)?;
+            args.output_dir = Some(output_plan.output_dir.clone());
+            let log_file = if args.no_file_log {
                 None
             } else {
-                Some(args.output_dir.join("barsmith.log"))
-            }
-        }
-    };
+                Some(output_plan.output_dir.join("barsmith.log"))
+            };
+            init_tracing(log_file.clone())?;
+            log_invocation(log_file.as_ref());
+            standard_output::write_start_files(&output_plan)?;
 
-    init_tracing(log_file.clone())?;
-    log_invocation(log_file.as_ref());
-
-    match cli.command {
-        Commands::Comb(args) => {
             let ack_new_df = args.ack_new_df;
             let config = args.into_config()?;
-            run_builtin_pipeline_with_options(config, BuiltinPipelineOptions { ack_new_df })
+            let run_result = run_builtin_pipeline_with_options(
+                config.clone(),
+                BuiltinPipelineOptions { ack_new_df },
+            );
+
+            if run_result.is_ok() {
+                standard_output::write_closeout_files(&output_plan, &config)?;
+            }
+
+            run_result
+        }
+        Commands::EvalFormulas(mut args) => {
+            let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+            let output_plan = standard_output::resolve_forward_output(&args, &argv)?;
+            if let Some(plan) = output_plan.as_ref() {
+                standard_output::apply_forward_output_defaults(&mut args, plan);
+            }
+            let log_file = output_plan.as_ref().and_then(|plan| {
+                if args.no_file_log {
+                    None
+                } else {
+                    Some(plan.output_dir.join("barsmith.log"))
+                }
+            });
+            init_tracing(log_file.clone())?;
+            log_invocation(log_file.as_ref());
+            if let Some(plan) = output_plan.as_ref() {
+                standard_output::write_start_files(plan)?;
+            }
+
+            let run_result = eval_formulas::run(&args);
+            if let (Some(plan), Ok(result)) = (output_plan.as_ref(), run_result.as_ref()) {
+                standard_output::write_forward_closeout_files(
+                    plan,
+                    &args,
+                    &result.report,
+                    &result.written_files,
+                )?;
+            }
+
+            run_result.map(|_| ())
+        }
+        Commands::Results(args) => {
+            init_tracing(None)?;
+            results::run(args)
         }
     }
 }

@@ -22,6 +22,7 @@ scripts/benchmark_smoke.sh
 
 - Keep CLI behavior explicit. Remove unsupported flags instead of accepting no-op compatibility shims.
 - Keep hot loops allocation-aware and benchmarked. Prefer readable helper boundaries outside tight loops.
+- Keep formula evaluation on the shared Rust evaluator path so ranked-formula workflows do not drift from combination-search semantics.
 - Keep resume semantics conservative. New settings that affect the search space or result meaning belong in the run identity manifest.
 - Keep generated outputs, local benchmark data, Parquet, DuckDB, and raw private CSVs out of git.
 - Document breaking changes in `docs/migration.md` and user-facing behavior in the relevant docs page.

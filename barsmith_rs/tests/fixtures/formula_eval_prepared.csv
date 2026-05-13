@@ -1,0 +1,7 @@
+timestamp,open,high,low,close,flag_a,flag_b,x,y,atr,2x_atr_tp_atr_stop,rr_2x_atr_tp_atr_stop,2x_atr_tp_atr_stop_eligible,2x_atr_tp_atr_stop_exit_i
+2024-12-29T00:00:00Z,100,102,99,101,true,false,2.0,1.0,1.0,true,1.0,true,2
+2024-12-30T00:00:00Z,101,103,100,102,true,true,3.0,2.0,1.0,false,-0.5,true,3
+2024-12-31T00:00:00Z,102,104,101,103,false,true,1.0,2.0,1.0,true,0.5,true,3
+2025-01-01T00:00:00Z,103,105,102,104,true,false,5.0,1.0,1.0,true,2.0,true,5
+2025-01-02T00:00:00Z,104,106,103,105,true,true,1.0,4.0,1.0,false,-1.0,true,5
+2025-01-03T00:00:00Z,105,107,104,106,false,true,3.0,3.0,1.0,true,0.25,true,6

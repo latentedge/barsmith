@@ -363,7 +363,7 @@ impl CoreStatsAccumulator {
             largest_loss: 0.0,
             sample_quality: classify_sample(total_bars),
             total_return: self.total_return,
-            // No R→$ approximations in core; these remain zero until the full
+            // No R-to-dollar approximations in core; these remain zero until the full
             // statistics path is invoked for reporting.
             cost_per_trade_r: 0.0,
             dollars_per_r: 0.0,

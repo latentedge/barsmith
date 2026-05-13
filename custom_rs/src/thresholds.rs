@@ -37,8 +37,7 @@ fn generate_threshold_catalog_from_ranges_json(
 ) -> Result<ThresholdCatalog> {
     let ranges = parse_feature_ranges_json(ranges_json)?;
 
-    // Align feature_ranges.json with the Rust continuous feature list even
-    // when the Python audit helper is not available.
+    // Align feature_ranges.json with the Rust continuous feature list.
     audit_feature_ranges_vs_continuous(&ranges);
 
     let dataset_display = dataset_path.display().to_string();
@@ -148,7 +147,7 @@ fn generate_threshold_catalog_from_ranges_json(
 
     // Threshold generation should be inspectable from the Rust run log.
     if !summaries.is_empty() {
-        info!("🎯 Auto-generated thresholds:");
+        info!("Derived scalar thresholds:");
         // Show a short headline first, then the full per-feature range summary.
         for summary in summaries.iter().take(5) {
             info!("   {}: {} thresholds", summary.feature, summary.count);
@@ -213,8 +212,7 @@ fn generate_threshold_catalog_from_ranges_json(
 }
 
 /// Emit non-fatal warnings when feature_ranges.json and CONTINUOUS_FEATURES
-/// drift out of sync. This helps catch catalog skew even when the Python
-/// parity scripts are not being run.
+/// drift out of sync. This helps catch catalog skew during normal Rust runs.
 fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) {
     let mut disabled: Vec<&str> = ranges
         .iter()
@@ -241,7 +239,7 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
 
     if !disabled.is_empty() {
         info!(
-            "ℹ️  feature_ranges.json entries disabled (no scalar thresholds will be generated for these):"
+            "feature_ranges.json entries disabled (no scalar thresholds will be generated for these):"
         );
         for name in &disabled {
             info!("   - {}", name);
@@ -252,13 +250,13 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
         in_json_not_continuous.sort_unstable();
         in_json_not_continuous.dedup();
         info!(
-            "⚠️  feature_ranges.json entries missing from CONTINUOUS_FEATURES (these features will have thresholds but are not in the Rust continuous catalog):"
+            "feature_ranges.json entries missing from CONTINUOUS_FEATURES (these features will have thresholds but are not in the Rust continuous catalog):"
         );
         for name in &in_json_not_continuous {
             info!("   - {}", name);
         }
         info!(
-            "💡 Consider adding these to CONTINUOUS_FEATURES in custom_rs::features or dropping them from feature_ranges.json"
+            "Add these to CONTINUOUS_FEATURES in custom_rs::features or drop them from feature_ranges.json"
         );
     }
 
@@ -266,13 +264,13 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
         in_continuous_not_json.sort_unstable();
         in_continuous_not_json.dedup();
         info!(
-            "⚠️  CONTINUOUS_FEATURES entries missing from feature_ranges.json (no scalar thresholds will be generated for these):"
+            "CONTINUOUS_FEATURES entries missing from feature_ranges.json (no scalar thresholds will be generated for these):"
         );
         for name in &in_continuous_not_json {
             info!("   - {}", name);
         }
         info!(
-            "💡 Add matching entries to feature_ranges.json if you want these features in feature-vs-constant permutations"
+            "Add matching entries to feature_ranges.json if you want these features in feature-vs-constant permutations"
         );
     }
 }
@@ -467,7 +465,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn increment_matches_python_reference() {
+    fn increment_uses_expected_nice_step() {
         let inc = calculate_optimal_increment(-0.1, 2.0, 2, 10);
         assert!((inc - 0.5).abs() < f64::EPSILON);
     }

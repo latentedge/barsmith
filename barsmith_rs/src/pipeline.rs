@@ -637,7 +637,7 @@ impl PermutationPipeline {
                 min_calmar,
             ) {
                 Ok(rows) => {
-                    info!("📊 Existing cumulative results before this run (partial catalog)");
+                    info!("Existing cumulative results before this run (partial catalog)");
                     if self.config.report_metrics.is_full() {
                         let rows = if self.config.stats_detail == StatsDetail::Core {
                             match self.recompute_full_stats_for_rows(&rows, &data, &bitset_catalog)
@@ -1354,7 +1354,7 @@ impl PermutationPipeline {
         if !skip_evaluation {
             if verbose {
                 let mut buffer = String::new();
-                let _ = writeln!(buffer, "📊  Evaluation summary (this run):");
+                let _ = writeln!(buffer, "Evaluation summary (this run):");
                 let _ = writeln!(
                     buffer,
                     "   Enumerated: {}",
@@ -1685,7 +1685,7 @@ fn log_target_stats(target_name: &str, ctx: &EvaluationContext) {
     );
 
     let mut buffer = String::new();
-    let _ = writeln!(buffer, "📊 Target statistics:");
+    let _ = writeln!(buffer, "Target statistics:");
     let _ = writeln!(buffer, "   Total bars: {}", total);
     let _ = writeln!(buffer, "   Profitable: {} ({:.1}%)", wins, win_rate);
     let _ = writeln!(
@@ -1836,7 +1836,7 @@ impl ComparisonPruningSummary {
 
     fn log_summary(&self) {
         let mut buffer = String::new();
-        let _ = writeln!(buffer, "♻️  Comparison catalog pruning:");
+        let _ = writeln!(buffer, "Comparison catalog pruning:");
         if self.constants_dropped > 0 {
             let _ = writeln!(
                 buffer,
@@ -2063,25 +2063,25 @@ fn log_analysis_overview(features: &[FeatureDescriptor], ctx: &EvaluationContext
     );
     if sampling.boolean_dropped > 0 {
         info!(
-            "   🔍 Dropped {} boolean features below min sample size",
+            "   Dropped {} boolean features below min sample size",
             sampling.boolean_dropped
         );
     }
     if sampling.threshold_dropped > 0 {
         info!(
-            "   🔍 Dropped {} feature-vs-constant conditions below min sample size",
+            "   Dropped {} feature-vs-constant conditions below min sample size",
             sampling.threshold_dropped
         );
     }
     if sampling.pair_dropped > 0 {
         info!(
-            "   🔍 Dropped {} feature-vs-feature predicates below min sample size",
+            "   Dropped {} feature-vs-feature predicates below min sample size",
             sampling.pair_dropped
         );
     }
 
     let mut buffer = String::new();
-    let _ = writeln!(buffer, "\n🔬 Mixed Features Analysis");
+    let _ = writeln!(buffer, "\nMixed features analysis");
     let _ = writeln!(
         buffer,
         "   Boolean features (eligible): {}",
@@ -2128,7 +2128,7 @@ fn log_top_results(
         .unwrap_or_else(|| "N/A".to_string());
     let _ = writeln!(
         buffer,
-        "\n📈 TOP {} COMBINATIONS ({}) - Sorted by EQUITY CALMAR:",
+        "\nTOP {} COMBINATIONS ({}) - Sorted by EQUITY CALMAR:",
         format_int(rows.len() as u128),
         direction
     );
@@ -2294,7 +2294,7 @@ fn log_top_formulas(rows: &[ResultRow]) {
         .unwrap_or_else(|| "N/A".to_string());
     let _ = writeln!(
         buffer,
-        "\n📈 TOP {} FORMULAS ({}) - Sorted by CALMAR RATIO:",
+        "\nTOP {} FORMULAS ({}) - Sorted by CALMAR RATIO:",
         rows.len(),
         direction
     );

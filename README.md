@@ -13,7 +13,7 @@ Barsmith is designed for long-running, resume-friendly exploration runs:
 - Persist results incrementally (Parquet + DuckDB) so you can stop/restart without losing progress.
 - Keep memory usage predictable via shared columnar data and reuse of intermediate masks.
 
-This repository is self-contained and does not depend on any external Python code.
+This repository is self-contained; the supported workflows are implemented in Rust.
 
 ## Status and support boundary
 
@@ -23,6 +23,8 @@ Currently supported by the default CLI:
 - OHLCV CSV input.
 - AND-only feature combinations.
 - Builtin targets: `next_bar_up`, `next_bar_down`, and `next_bar_color_and_wicks`.
+- Ranked formula evaluation against an existing `barsmith_prepared.csv`.
+- Rust-native result querying, FRS exports, equity-curve exports, and optional PNG plots.
 - Local filesystem outputs, with optional `aws s3 cp` uploads.
 
 Not supported by the default CLI:
@@ -33,7 +35,9 @@ Not supported by the default CLI:
 ## Key features
 
 - **Combination search (`comb`)**: AND-only feature logic, depth limits, min-sample gating, optional feature-pairs, resume offsets.
+- **Formula evaluation (`eval-formulas`)**: evaluate ranked formulas on a prepared dataset with the same stacking, sizing, cost, and equity semantics used by Barsmith.
 - **Resume & durability**: incremental Parquet parts + a DuckDB view for fast `top results` queries.
+- **Rust-native reporting**: query cumulative result stores and export formula results, FRS windows, equity curves, and optional plots without external scripts.
 - **Deterministic runs**: stable CSV fingerprinting and run identity manifests to prevent accidental resume on incompatible inputs or settings.
 - **Research-friendly runs**: deterministic dataset fingerprinting + resume metadata to protect long experiments.
 - **Optional S3 upload**: upload outputs using `aws s3 cp` (requires AWS CLI on PATH).
@@ -49,7 +53,10 @@ cargo run -p barsmith_cli -- comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --output-dir ./tmp/run_01_dry \
+  --runs-root runs/artifacts \
+  --dataset-id tiny_sample \
+  --run-id quickstart_dry \
+  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -64,7 +71,10 @@ cargo run -p barsmith_cli -- comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --output-dir ./tmp/run_01 \
+  --runs-root runs/artifacts \
+  --dataset-id tiny_sample \
+  --run-id quickstart_real \
+  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -85,6 +95,8 @@ Then run it as:
 ```bash
 barsmith_cli --help
 barsmith_cli comb --help
+barsmith_cli eval-formulas --help
+barsmith_cli results --help
 ```
 
 ## Outputs (what gets written)
@@ -93,11 +105,68 @@ barsmith_cli comb --help
 
 - `barsmith_prepared.csv` (engineered dataset produced for the run)
 - `run_manifest.json` (run identity used to validate safe resume)
+- `command.txt` and `command.json` (command metadata for audit/replay)
 - `results_parquet/part-*.parquet` (incremental result batches)
 - `cumulative.duckdb` (DuckDB catalog and views over all batches)
 - `barsmith.log` (unless `--no-file-log` is set)
+- `checksums.sha256` and `reports/summary.md` (run closeout artifacts)
 
 Barsmith can resume from an existing output directory only when the run manifest matches the current CSV fingerprint and resume-sensitive settings. Increasing `--max-depth` is allowed because the deterministic enumeration stream extends the already processed prefix. Use `--force` or a fresh `--output-dir` for an incompatible run. When reusing an existing `--output-dir`, pass `--ack-new-df` so the CLI can overwrite `barsmith_prepared.csv`.
+
+For new research runs, prefer the standardized layout:
+
+```bash
+cargo run --release -p barsmith_cli -- comb \
+  --csv ../es_30m.csv \
+  --target 2x_atr_tp_atr_stop \
+  --direction long \
+  --runs-root runs/artifacts \
+  --dataset-id es_30m_official_v2 \
+  --run-slug no_stacking \
+  --registry-dir runs/registry
+```
+
+This writes full artifacts under
+`runs/artifacts/comb/<target>/<direction>/<dataset-id>/<run-id>/` and writes an
+optional lightweight registry JSON under
+`runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json`. Full
+artifacts remain ignored by Git; registry records are meant for future audit
+traceability without embedding local artifact paths or formula text. Combination
+registry records include both best Calmar and best total-R summaries.
+
+## Formula evaluation
+
+`eval-formulas` evaluates a ranked formula file against `barsmith_prepared.csv`:
+
+```bash
+cargo run -p barsmith_cli -- eval-formulas \
+  --prepared runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v2/<run-id>/barsmith_prepared.csv \
+  --formulas ./formulas.txt \
+  --target 2x_atr_tp_atr_stop \
+  --cutoff 2024-12-31 \
+  --stacking-mode no-stacking \
+  --position-sizing fractional \
+  --runs-root runs/artifacts \
+  --dataset-id es_30m_official_v2 \
+  --run-slug no_stacking_forward \
+  --registry-dir runs/registry \
+  --plot \
+  --plot-mode combined
+```
+
+This writes forward-test artifacts under
+`runs/artifacts/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/` and a
+lightweight registry record under
+`runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`.
+
+Formula files use one AND-only expression per line, for example:
+
+```text
+Rank 1: trend_flag && rsi_7>40.0 && close<high
+Rank 2: atr>=1.25 && volume>volume_sma_20
+```
+
+See `docs/cli.md` for the complete grammar, FRS options, and plotting flags.
 
 ## How `comb` works
 
@@ -219,6 +288,18 @@ Search combinations:
 cargo run -p barsmith_cli -- comb --help
 ```
 
+Evaluate formulas:
+
+```bash
+cargo run -p barsmith_cli -- eval-formulas --help
+```
+
+Query stored results:
+
+```bash
+cargo run -p barsmith_cli -- results --help
+```
+
 ### S3 upload
 
 `--s3-output s3://bucket/prefix` enables upload targets and `--s3-upload-each-batch` uploads after every ingestion batch.
@@ -241,7 +322,7 @@ Performance depends heavily on:
 This is an example command shape for a long local run with the default builtin target. It is macOS-specific (`caffeinate`) and this repo is marked unstable.
 
 ```bash
-caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.csv --direction short --target next_bar_color_and_wicks --output-dir ../tmp/barsmith/next_bar_color_and_wicks/es_30m_short_no_stacking --max-depth 5 --min-samples 4000 --date-end 2024-12-31 --feature-pairs --auto-batch --batch-size 8000000 --stats-detail core --report formula --top-k 10000 --max-drawdown 25 --max-drawdown-report 25 --min-calmar-report 1.0 --subset-pruning --asset MES --profile-eval off
+caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.csv --direction short --target next_bar_color_and_wicks --runs-root runs/artifacts --dataset-id es_30m_official_v2 --run-slug no_stacking --registry-dir runs/registry --max-depth 5 --min-samples 4000 --date-end 2024-12-31 --feature-pairs --auto-batch --batch-size 8000000 --stats-detail core --report formula --top-k 10000 --max-drawdown 25 --max-drawdown-report 25 --min-calmar-report 1.0 --subset-pruning --asset MES --profile-eval off
 ```
 
 ## Project layout

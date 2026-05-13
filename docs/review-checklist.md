@@ -10,6 +10,7 @@ Use this checklist for behavior-sensitive Barsmith changes.
 - Existing workspace tests pass: `cargo test --workspace --all-targets --all-features`.
 - Prepared dataset requirements are updated when target, eligibility, reward, or exit-index behavior changes.
 - Date filtering, direction filtering, and no-stacking behavior are tested when touched.
+- Formula parsing, formula bitsets, FRS windows, equity-curve exports, and plots are tested when `eval-formulas` behavior changes.
 
 ## Resume And Storage
 

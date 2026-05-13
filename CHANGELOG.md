@@ -14,6 +14,10 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Wrote Parquet result batches through a temporary file before atomic rename.
 - Added fixture-tier docs, golden smoke, and benchmark smoke scripts.
 - Refactored bitset scanning, stats metrics, batch/subset pruning, and custom target geometry into dedicated modules with focused tests.
+- Added Rust-native ranked formula evaluation with FRS summaries, equity-curve exports, and optional PNG plots.
+- Added a Rust-native `results` command for querying cumulative run folders and removed the legacy external result-query script.
+- Added standardized run-folder construction via `--runs-root`, command metadata files, closeout summaries, optional registry JSON, and `total_return`/`calmar_r` result columns for future audits.
+- Standardized forward-test outputs so `eval-formulas` can write the same command metadata, manifest, checksums, summary, plots, and Git-safe registry records as combination runs.
 - Split large private unit-test modules out of production files to improve maintainability without changing runtime behavior.
 - Expanded open-source documentation for stability, testing, performance review, migration, and contributor workflows.
 - Documented first-party unsafe Rust usage and review policy.

@@ -10,6 +10,7 @@ use barsmith_rs::config::{
     Config, Direction, EvalProfileMode, PositionSizingMode, ReportMetricsMode, StackingMode,
     StopDistanceUnit,
 };
+use barsmith_rs::formula_eval::{EquityCurveWindowSelection, FrsScope, RankBy};
 
 const DEFAULT_CAPITAL_DOLLAR: f64 = 100_000.0;
 const DEFAULT_RISK_PCT_PER_TRADE: f64 = 1.0;
@@ -29,6 +30,270 @@ pub enum Commands {
     /// Run feature combination search over an engineered dataset
     #[command(name = "comb")]
     Comb(CombArgs),
+    /// Evaluate ranked formulas against an existing barsmith_prepared.csv
+    #[command(name = "eval-formulas")]
+    EvalFormulas(EvalFormulasArgs),
+    /// Query a cumulative Barsmith result store
+    #[command(name = "results")]
+    Results(ResultsArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct EvalFormulasArgs {
+    /// Path to barsmith_prepared.csv
+    #[arg(long = "prepared", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub prepared_path: PathBuf,
+
+    /// Ranked formula file. Supports lines like `Rank 1: a && b>1.0`.
+    #[arg(long = "formulas", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub formulas_path: PathBuf,
+
+    /// Target column name in the prepared CSV
+    #[arg(long, default_value = "2x_atr_tp_atr_stop")]
+    pub target: String,
+
+    /// Optional RR column override. Defaults to `rr_<target>`.
+    #[arg(long = "rr-column")]
+    pub rr_column: Option<String>,
+
+    /// Trade stacking behavior for formula evaluation.
+    #[arg(long = "stacking-mode", value_enum, default_value = "no-stacking")]
+    pub stacking_mode: StackingModeValue,
+
+    /// Cutoff date. Pre window is <= cutoff; post window is > cutoff.
+    #[arg(long, default_value = "2024-12-31")]
+    pub cutoff: String,
+
+    /// Starting capital in USD for equity simulation.
+    #[arg(long = "capital", default_value_t = DEFAULT_CAPITAL_DOLLAR)]
+    pub capital: f64,
+
+    /// Risk percentage per trade, applied to current equity.
+    #[arg(long = "risk-pct-per-trade", default_value_t = DEFAULT_RISK_PCT_PER_TRADE)]
+    pub risk_pct_per_trade: f64,
+
+    /// Number of ranked formulas to print in each text report window. Use 0 for all.
+    #[arg(long = "report-top", default_value_t = 50)]
+    pub report_top: usize,
+
+    /// Explicit forward-test run folder.
+    ///
+    /// Use this for a specific output path. For the canonical
+    /// forward-test/target/dataset/cutoff/run-id layout, use --runs-root.
+    #[arg(
+        long = "output-dir",
+        value_hint = clap::ValueHint::DirPath,
+        conflicts_with = "runs_root"
+    )]
+    pub output_dir: Option<PathBuf>,
+
+    /// Root directory for standardized forward-test run folders.
+    ///
+    /// The effective output directory becomes
+    /// `<runs-root>/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/`.
+    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath)]
+    pub runs_root: Option<PathBuf>,
+
+    /// Dataset identifier used in standardized output paths.
+    ///
+    /// Defaults to the prepared CSV file stem after path-safe normalization.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: Option<String>,
+
+    /// Stable run identifier used in standardized output paths and registry records.
+    ///
+    /// Defaults to `<UTC timestamp>_<git short sha>_<run slug>`.
+    #[arg(long = "run-id")]
+    pub run_id: Option<String>,
+
+    /// Human-readable suffix used when Barsmith generates --run-id.
+    #[arg(long = "run-slug")]
+    pub run_slug: Option<String>,
+
+    /// Optional directory for lightweight Git-trackable run registry records.
+    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath)]
+    pub registry_dir: Option<PathBuf>,
+
+    /// Durable artifact URI for the full run folder, recorded in registry metadata.
+    #[arg(long = "artifact-uri")]
+    pub artifact_uri: Option<String>,
+
+    /// Include generated CSV, JSON, and plot artifacts in checksums.sha256.
+    ///
+    /// By default Barsmith hashes only small metadata files so closeout stays cheap.
+    #[arg(long = "checksum-artifacts", default_value_t = false)]
+    pub checksum_artifacts: bool,
+
+    /// Disable writing barsmith.log into the output directory. When set,
+    /// logs are only emitted to stdout/stderr.
+    #[arg(long = "no-file-log", default_value_t = false)]
+    pub no_file_log: bool,
+
+    /// Optional full result CSV output path.
+    #[arg(long = "csv-out", value_hint = clap::ValueHint::FilePath)]
+    pub csv_out: Option<PathBuf>,
+
+    /// Optional JSON output path.
+    #[arg(long = "json-out", value_hint = clap::ValueHint::FilePath)]
+    pub json_out: Option<PathBuf>,
+
+    /// Primary ranking metric for the post window.
+    #[arg(long = "rank-by", value_enum, default_value = "frs")]
+    pub rank_by: FormulaRankByValue,
+
+    /// Disable Forward Robustness Score.
+    #[arg(long = "no-frs", default_value_t = false)]
+    pub no_frs: bool,
+
+    /// FRS calendar-window scope.
+    #[arg(
+        long = "frs-scope",
+        alias = "frs-period",
+        value_enum,
+        default_value = "all"
+    )]
+    pub frs_scope: FrsScopeValue,
+
+    /// Trade-count floor for FRS trade score.
+    #[arg(long = "frs-nmin", default_value_t = 30)]
+    pub frs_nmin: usize,
+
+    #[arg(long = "frs-alpha", default_value_t = 2.0)]
+    pub frs_alpha: f64,
+
+    #[arg(long = "frs-beta", default_value_t = 2.0)]
+    pub frs_beta: f64,
+
+    #[arg(long = "frs-gamma", default_value_t = 1.0)]
+    pub frs_gamma: f64,
+
+    #[arg(long = "frs-delta", default_value_t = 1.0)]
+    pub frs_delta: f64,
+
+    /// Optional FRS summary CSV output path.
+    #[arg(long = "frs-out", value_hint = clap::ValueHint::FilePath)]
+    pub frs_out: Option<PathBuf>,
+
+    /// Optional FRS per-window CSV output path.
+    #[arg(long = "frs-windows-out", value_hint = clap::ValueHint::FilePath)]
+    pub frs_windows_out: Option<PathBuf>,
+
+    /// Export equity curves for the top K strategies. Use 0 to disable.
+    #[arg(long = "equity-curves-top-k", default_value_t = 10)]
+    pub equity_curves_top_k: usize,
+
+    /// Which ranking list selects strategies for equity curve export.
+    #[arg(long = "equity-curves-rank-by", value_enum, default_value = "post")]
+    pub equity_curves_rank_by: EquityCurveRankByValue,
+
+    /// Which window(s) to export equity curves for.
+    #[arg(long = "equity-curves-window", value_enum, default_value = "both")]
+    pub equity_curves_window: EquityCurveWindowValue,
+
+    /// Optional equity curve CSV output path.
+    #[arg(long = "equity-curves-out", value_hint = clap::ValueHint::FilePath)]
+    pub equity_curves_out: Option<PathBuf>,
+
+    /// Render plot images from equity curve rows.
+    #[arg(long = "plot", default_value_t = false)]
+    pub plot: bool,
+
+    /// Plot mode.
+    #[arg(long = "plot-mode", value_enum, default_value = "individual")]
+    pub plot_mode: PlotModeValue,
+
+    /// Output PNG path for combined plot.
+    #[arg(long = "plot-out", value_hint = clap::ValueHint::FilePath)]
+    pub plot_out: Option<PathBuf>,
+
+    /// Output directory for individual plots.
+    #[arg(long = "plot-dir", value_hint = clap::ValueHint::DirPath)]
+    pub plot_dir: Option<PathBuf>,
+
+    /// X-axis for plots.
+    #[arg(long = "plot-x", value_enum, default_value = "timestamp")]
+    pub plot_x: PlotXValue,
+
+    /// Metric to plot.
+    #[arg(long = "plot-metric", value_enum, default_value = "dollar")]
+    pub plot_metric: PlotMetricValue,
+
+    /// Optional R-space max drawdown filter applied to reported window results.
+    #[arg(long = "max-drawdown")]
+    pub max_drawdown: Option<f64>,
+
+    /// Optional minimum equity Calmar filter applied to reported window results.
+    #[arg(long = "min-calmar")]
+    pub min_calmar: Option<f64>,
+
+    /// Asset code for cost model and contracts sizing.
+    #[arg(long = "asset")]
+    pub asset: Option<String>,
+
+    /// Position sizing mode for equity simulation.
+    #[arg(long = "position-sizing", value_enum, default_value = "fractional")]
+    pub position_sizing: PositionSizingValue,
+
+    /// Per-trade stop distance column for contract sizing.
+    #[arg(long = "stop-distance-column")]
+    pub stop_distance_column: Option<String>,
+
+    /// Unit for --stop-distance-column.
+    #[arg(long = "stop-distance-unit", value_enum, default_value = "points")]
+    pub stop_distance_unit: StopDistanceUnitValue,
+
+    #[arg(long = "min-contracts", default_value_t = 1)]
+    pub min_contracts: usize,
+
+    #[arg(long = "max-contracts")]
+    pub max_contracts: Option<usize>,
+
+    #[arg(long = "margin-per-contract-dollar")]
+    pub margin_per_contract_dollar: Option<f64>,
+
+    #[arg(long = "commission-per-trade-dollar")]
+    pub commission_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "slippage-per-trade-dollar")]
+    pub slippage_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "cost-per-trade-dollar")]
+    pub cost_per_trade_dollar: Option<f64>,
+
+    /// Disable cost model entirely and keep raw R semantics.
+    #[arg(long = "no-costs", default_value_t = false)]
+    pub no_costs: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct ResultsArgs {
+    /// Barsmith output directory containing cumulative.duckdb and results_parquet/
+    #[arg(long = "output-dir", value_hint = clap::ValueHint::DirPath)]
+    pub output_dir: PathBuf,
+
+    #[arg(long, default_value = "long")]
+    pub direction: DirectionValue,
+
+    #[arg(long, default_value = "next_bar_color_and_wicks")]
+    pub target: String,
+
+    #[arg(long = "min-samples", alias = "min-sample-size", default_value_t = 500)]
+    pub min_samples: usize,
+
+    #[arg(long = "min-win-rate", default_value_t = 0.0)]
+    pub min_win_rate: f64,
+
+    #[arg(long = "max-drawdown", default_value_t = 10_000.0)]
+    pub max_drawdown: f64,
+
+    #[arg(long = "min-calmar")]
+    pub min_calmar: Option<f64>,
+
+    #[arg(long = "rank-by", value_enum, default_value = "calmar-ratio")]
+    pub rank_by: ResultRankByValue,
+
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
 }
 
 #[derive(Parser, Debug)]
@@ -45,9 +310,54 @@ pub struct CombArgs {
     #[arg(long, default_value = "next_bar_color_and_wicks")]
     pub target: String,
 
-    /// Output directory for cumulative artefacts
-    #[arg(long = "output-dir", value_hint = clap::ValueHint::DirPath)]
-    pub output_dir: PathBuf,
+    /// Output directory for cumulative artefacts.
+    ///
+    /// Use this for explicit legacy-compatible paths. For the canonical
+    /// comb/target/direction/dataset/run-id layout, use --runs-root instead.
+    #[arg(
+        long = "output-dir",
+        value_hint = clap::ValueHint::DirPath,
+        conflicts_with = "runs_root",
+        required_unless_present = "runs_root"
+    )]
+    pub output_dir: Option<PathBuf>,
+
+    /// Root directory for standardized run folders.
+    ///
+    /// The effective output directory becomes
+    /// `<runs-root>/comb/<target>/<direction>/<dataset-id>/<run-id>/`.
+    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath)]
+    pub runs_root: Option<PathBuf>,
+
+    /// Dataset identifier used in standardized output paths.
+    ///
+    /// Defaults to the input CSV file stem after path-safe normalization.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: Option<String>,
+
+    /// Stable run identifier used in standardized output paths and registry records.
+    ///
+    /// Defaults to `<UTC timestamp>_<git short sha>_<run slug>`.
+    #[arg(long = "run-id")]
+    pub run_id: Option<String>,
+
+    /// Human-readable suffix used when Barsmith generates --run-id.
+    #[arg(long = "run-slug")]
+    pub run_slug: Option<String>,
+
+    /// Optional directory for lightweight Git-trackable run registry records.
+    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath)]
+    pub registry_dir: Option<PathBuf>,
+
+    /// Durable artifact URI for the full run folder, recorded in registry metadata.
+    #[arg(long = "artifact-uri")]
+    pub artifact_uri: Option<String>,
+
+    /// Include heavy artifacts such as Parquet parts, DuckDB, and logs in checksums.sha256.
+    ///
+    /// By default Barsmith hashes only small metadata files so closeout stays cheap.
+    #[arg(long = "checksum-artifacts", default_value_t = false)]
+    pub checksum_artifacts: bool,
 
     /// Optional S3 base URI to upload output artefacts to (e.g. s3://bucket/prefix).
     ///
@@ -416,7 +726,9 @@ impl CombArgs {
             source_csv: Some(self.csv_path),
             direction,
             target,
-            output_dir: self.output_dir,
+            output_dir: self
+                .output_dir
+                .ok_or_else(|| anyhow::anyhow!("missing effective output directory"))?,
             max_depth: self.max_depth,
             min_sample_size,
             min_sample_size_report,
@@ -517,7 +829,7 @@ pub enum StackingModeValue {
 }
 
 impl StackingModeValue {
-    fn to_mode(self) -> StackingMode {
+    pub fn to_mode(self) -> StackingMode {
         match self {
             StackingModeValue::Stacking => StackingMode::Stacking,
             StackingModeValue::NoStacking => StackingMode::NoStacking,
@@ -532,7 +844,7 @@ pub enum PositionSizingValue {
 }
 
 impl PositionSizingValue {
-    fn to_mode(self) -> PositionSizingMode {
+    pub fn to_mode(self) -> PositionSizingMode {
         match self {
             PositionSizingValue::Fractional => PositionSizingMode::Fractional,
             PositionSizingValue::Contracts => PositionSizingMode::Contracts,
@@ -547,12 +859,115 @@ pub enum StopDistanceUnitValue {
 }
 
 impl StopDistanceUnitValue {
-    fn to_mode(self) -> StopDistanceUnit {
+    pub fn to_mode(self) -> StopDistanceUnit {
         match self {
             StopDistanceUnitValue::Points => StopDistanceUnit::Points,
             StopDistanceUnitValue::Ticks => StopDistanceUnit::Ticks,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum FormulaRankByValue {
+    #[value(name = "calmar-equity")]
+    CalmarEquity,
+    Frs,
+}
+
+impl FormulaRankByValue {
+    pub fn to_rank_by(self) -> RankBy {
+        match self {
+            Self::CalmarEquity => RankBy::CalmarEquity,
+            Self::Frs => RankBy::Frs,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ResultRankByValue {
+    #[value(name = "calmar-ratio")]
+    CalmarRatio,
+    #[value(name = "total-return")]
+    TotalReturn,
+}
+
+impl ResultRankByValue {
+    pub fn to_rank_by(self) -> barsmith_rs::storage::ResultRankBy {
+        match self {
+            Self::CalmarRatio => barsmith_rs::storage::ResultRankBy::CalmarRatio,
+            Self::TotalReturn => barsmith_rs::storage::ResultRankBy::TotalReturn,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum FrsScopeValue {
+    Window,
+    Pre,
+    Post,
+    All,
+}
+
+impl FrsScopeValue {
+    pub fn to_scope(self) -> FrsScope {
+        match self {
+            Self::Window => FrsScope::Window,
+            Self::Pre => FrsScope::Pre,
+            Self::Post => FrsScope::Post,
+            Self::All => FrsScope::All,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EquityCurveRankByValue {
+    Pre,
+    Post,
+}
+
+impl EquityCurveRankByValue {
+    pub fn to_rank_by(self, post_rank_by: RankBy) -> RankBy {
+        match self {
+            Self::Pre => RankBy::CalmarEquity,
+            Self::Post => post_rank_by,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EquityCurveWindowValue {
+    Pre,
+    Post,
+    Both,
+}
+
+impl EquityCurveWindowValue {
+    pub fn to_selection(self) -> EquityCurveWindowSelection {
+        match self {
+            Self::Pre => EquityCurveWindowSelection::Pre,
+            Self::Post => EquityCurveWindowSelection::Post,
+            Self::Both => EquityCurveWindowSelection::Both,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PlotModeValue {
+    Individual,
+    Combined,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PlotXValue {
+    Timestamp,
+    #[value(name = "trade-index")]
+    TradeIndex,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PlotMetricValue {
+    Dollar,
+    R,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -641,7 +1056,14 @@ mod tests {
             csv_path: PathBuf::from("dummy.csv"),
             direction: DirectionValue::Long,
             target: "next_bar_color_and_wicks".to_string(),
-            output_dir: PathBuf::from("out"),
+            output_dir: Some(PathBuf::from("out")),
+            runs_root: None,
+            dataset_id: None,
+            run_id: None,
+            run_slug: None,
+            registry_dir: None,
+            artifact_uri: None,
+            checksum_artifacts: false,
             s3_output: None,
             s3_upload_each_batch: false,
             max_depth: 3,

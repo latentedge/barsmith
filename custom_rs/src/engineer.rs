@@ -896,10 +896,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-            "Missing required 'atr' column for highlow_or_atr target. Re-generate the engineered dataset \
-            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1083,10 +1081,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-	            "Missing required 'atr' column for 2x_atr_tp_atr_stop target. Re-generate the engineered dataset \
-	            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-	        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1179,10 +1175,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-	            "Missing required 'atr' column for 3x_atr_tp_atr_stop target. Re-generate the engineered dataset \
-	            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-	        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1275,10 +1269,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-	            "Missing required 'atr' column for atr_tp_atr_stop target. Re-generate the engineered dataset \
-	            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-	        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1371,10 +1363,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-	            "Missing required 'atr' column for highlow_sl_2x_atr_tp_rr_gt_1 target. Re-generate the engineered dataset \
-	            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-	        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1473,10 +1463,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-	            "Missing required 'atr' column for highlow_sl_1x_atr_tp_rr_gt_1 target. Re-generate the engineered dataset \
-	            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-	        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -1575,10 +1563,8 @@ impl FeatureEngineer {
         let high = column_with_nans(&self.frame, "high")?;
         let low = column_with_nans(&self.frame, "low")?;
         let close = column_with_nans(&self.frame, "close")?;
-        let atr_values = column_with_nans(&self.frame, "atr").with_context(|| {
-            "Missing required 'atr' column for highlow_or_atr_tightest_stop target. Re-generate the engineered dataset \
-            (e.g., rerun Barsmith with --ack-new-df or choose a fresh --output-dir) so 'atr' is present."
-        })?;
+        let atr_values = column_with_nans(&self.frame, "atr")
+            .with_context(|| missing_atr_context(TARGET_NAME))?;
 
         // Date-limited runs resolve in-sample entries no later than the cutoff.
         // Later rows still get full-horizon labels in the prepared CSV.
@@ -2794,8 +2780,8 @@ fn oscillator_features(
         "is_stoch_overbought",
         stoch_threshold(&stoch_k_logic, 80.0, Comparison::Greater),
     );
-    // This cross still differs from the pandas reference on a few bars; keep
-    // parity assertions narrow until the Typer implementation is matched.
+    // This cross still differs from the legacy reference on a few bars, so
+    // parity assertions stay narrow until the indicator semantics are reconciled.
     bools.insert(
         "stoch_bullish_cross",
         stoch_cross(
@@ -3203,6 +3189,13 @@ fn column_to_vec(frame: &DataFrame, name: &str) -> Result<Vec<f64>> {
         .collect()
 }
 
+fn missing_atr_context(target_name: &str) -> String {
+    format!(
+        "Missing required 'atr' column for {target_name} target. Re-generate the engineered dataset \
+         with --ack-new-df or choose a fresh --output-dir so 'atr' is present."
+    )
+}
+
 fn column_with_nans(frame: &DataFrame, name: &str) -> Result<Vec<f64>> {
     let series = frame
         .column(name)
@@ -3267,7 +3260,7 @@ fn compute_week_indices(timestamps: &[DateTime<Utc>]) -> (Vec<i64>, Vec<usize>) 
         return (Vec::new(), Vec::new());
     }
 
-    // Anchor Sunday 22:00 UTC, mirroring the weekly rolling helpers in Python.
+    // Anchor Sunday 22:00 UTC so weekly rolling windows stay stable.
     let anchor_date = NaiveDate::from_ymd_opt(1970, 1, 4).expect("valid date");
     let anchor_time = NaiveTime::from_hms_opt(22, 0, 0).expect("valid time");
     let anchor = DateTime::<Utc>::from_naive_utc_and_offset(anchor_date.and_time(anchor_time), Utc);

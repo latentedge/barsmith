@@ -82,19 +82,19 @@ impl FeatureCatalog {
 
             if !missing_pair_features.is_empty() {
                 info!(
-                    "⚠️  Pairwise numeric configuration entries missing from engineered dataset (not present as columns):"
+                    "Pairwise numeric configuration entries missing from engineered dataset (not present as columns):"
                 );
                 for name in &missing_pair_features {
                     info!("   - {}", name);
                 }
                 info!(
-                    "💡 Consider adding these to engineer.rs or removing them from the pairwise numeric configuration"
+                    "Add these to engineer.rs or remove them from the pairwise numeric configuration"
                 );
             }
 
             if !non_numeric_pair_features.is_empty() {
                 info!(
-                    "⚠️  Pairwise numeric configuration entries are not numeric in the engineered dataset (skipping for feature-pairs):"
+                    "Pairwise numeric configuration entries are not numeric in the engineered dataset (skipping for feature-pairs):"
                 );
                 for name in &non_numeric_pair_features {
                     if let Ok(series) = df.column(name) {
@@ -104,7 +104,7 @@ impl FeatureCatalog {
                     }
                 }
                 info!(
-                    "💡 Ensure these columns are exported as float32/float64 if you want them in feature-to-feature comparisons"
+                    "Export these columns as float32/float64 if you want them in feature-to-feature comparisons"
                 );
             }
 
@@ -129,19 +129,19 @@ impl FeatureCatalog {
             if !unexpected_pair_candidates.is_empty() {
                 unexpected_pair_candidates.sort();
                 info!(
-                    "⚠️  Found {} numeric features in dataframe but not in the pairwise numeric configuration (skipped for feature-to-feature predicates):",
+                    "Found {} numeric features in dataframe but not in the pairwise numeric configuration (skipped for feature-to-feature predicates):",
                     unexpected_pair_candidates.len()
                 );
                 for name in &unexpected_pair_candidates {
                     info!("   - {}", name);
                 }
                 info!(
-                    "💡 Consider adding these to the pairwise numeric configuration in custom_rs::features if you want feature-to-feature comparisons for them"
+                    "Add these to the pairwise numeric configuration in custom_rs::features if you want feature-to-feature comparisons for them"
                 );
             }
 
             if !available_pair_features.is_empty() {
-                info!("🎯 Feature-pair candidates:");
+                info!("Feature-pair candidates:");
                 for name in &available_pair_features {
                     info!("   - {}", name);
                 }
@@ -231,7 +231,7 @@ impl FeatureCatalog {
                 // A short preview is enough to make accidental catalog explosions
                 // visible in logs.
                 if pair_count > 0 {
-                    info!("🎯 Sample feature-to-feature predicates:");
+                    info!("Sample feature-to-feature predicates:");
                     for name in &preview_names {
                         info!("   - {}", name);
                     }
@@ -405,7 +405,7 @@ fn prune_boolean_constants_and_duplicates(
     if !constant_dropped.is_empty() {
         constant_dropped.sort();
         info!(
-            "⚠️  Dropped {} constant boolean features for this dataset (mask always true/false):",
+            "Dropped {} constant boolean features for this dataset (mask always true/false):",
             constant_dropped.len()
         );
         for name in &constant_dropped {
@@ -415,7 +415,7 @@ fn prune_boolean_constants_and_duplicates(
 
     if !duplicate_dropped.is_empty() {
         info!(
-            "⚠️  Dropped {} duplicate boolean features with identical masks:",
+            "Dropped {} duplicate boolean features with identical masks:",
             duplicate_dropped.len()
         );
         for (dup, canonical) in &duplicate_dropped {
@@ -472,14 +472,14 @@ fn audit_boolean_coverage(df: &DataFrame) {
     if !unexpected.is_empty() {
         unexpected.sort();
         info!(
-            "⚠️  Found {} boolean features (0/1 values) in dataframe but not in BOOLEAN_FEATURES:",
+            "Found {} boolean features (0/1 values) in dataframe but not in BOOLEAN_FEATURES:",
             unexpected.len()
         );
         for name in &unexpected {
             info!("   - {}", name);
         }
         info!(
-            "💡 Consider adding these to BOOLEAN_FEATURES in custom_rs::features if you want them in the catalog"
+            "Add these to BOOLEAN_FEATURES in custom_rs::features if you want them in the catalog"
         );
     }
 }
@@ -522,7 +522,7 @@ fn audit_continuous_coverage(df: &DataFrame) {
 
     if !unexpected.is_empty() {
         info!(
-            "⚠️  Found {} continuous features in dataframe but not in CONTINUOUS_FEATURES/feature_ranges.json:",
+            "Found {} continuous features in dataframe but not in CONTINUOUS_FEATURES/feature_ranges.json:",
             unexpected.len()
         );
         for (name, p1, p99, data_min, data_max) in &unexpected {
@@ -531,9 +531,7 @@ fn audit_continuous_coverage(df: &DataFrame) {
                 name, p1, p99, data_min, data_max
             );
         }
-        info!(
-            "💡 Consider adding these to feature_ranges.json if you want to include them in threshold testing"
-        );
+        info!("Add these to feature_ranges.json if you want to include them in threshold testing");
     }
 }
 
@@ -559,23 +557,23 @@ fn audit_continuous_definitions(df: &DataFrame) {
 
     if !missing.is_empty() {
         info!(
-            "⚠️  CONTINUOUS_FEATURES entries missing from engineered dataset (not present as columns):"
+            "CONTINUOUS_FEATURES entries missing from engineered dataset (not present as columns):"
         );
         for name in &missing {
             info!("   - {}", name);
         }
-        info!("💡 Consider adding these to engineer.rs or removing them from CONTINUOUS_FEATURES");
+        info!("Add these to engineer.rs or remove them from CONTINUOUS_FEATURES");
     }
 
     if !non_numeric_or_binary.is_empty() {
         info!(
-            "⚠️  CONTINUOUS_FEATURES entries are not suitable continuous numerics in the engineered dataset (non-float or effectively boolean 0/1):"
+            "CONTINUOUS_FEATURES entries are not suitable continuous numerics in the engineered dataset (non-float or effectively boolean 0/1):"
         );
         for (name, dtype) in &non_numeric_or_binary {
             info!("   - {} (dtype={:?})", name, dtype);
         }
         info!(
-            "💡 Ensure these columns are exported as float32/float64 with rich value ranges (not just 0/1) if you want them in the continuous catalog"
+            "Export these columns as float32/float64 with rich value ranges (not just 0/1) if you want them in the continuous catalog"
         );
     }
 }
@@ -628,24 +626,20 @@ fn audit_boolean_definitions(df: &DataFrame) {
     }
 
     if !missing.is_empty() {
-        info!(
-            "⚠️  BOOLEAN_FEATURES entries missing from engineered dataset (not present as columns):"
-        );
+        info!("BOOLEAN_FEATURES entries missing from engineered dataset (not present as columns):");
         for name in &missing {
             info!("   - {}", name);
         }
-        info!(
-            "💡 Consider adding these flags to engineer.rs or removing them from BOOLEAN_FEATURES"
-        );
+        info!("Add these flags to engineer.rs or remove them from BOOLEAN_FEATURES");
     }
 
     if !non_boolean.is_empty() {
-        info!("⚠️  BOOLEAN_FEATURES entries are not boolean/0-1 in the engineered dataset:");
+        info!("BOOLEAN_FEATURES entries are not boolean/0-1 in the engineered dataset:");
         for (name, dtype) in &non_boolean {
             info!("   - {} (dtype={:?})", name, dtype);
         }
         info!(
-            "💡 Ensure these columns are exported as booleans or 0/1 integers if you want them in the boolean catalog"
+            "Export these columns as booleans or 0/1 integers if you want them in the boolean catalog"
         );
     }
 }
@@ -693,8 +687,8 @@ fn is_binary_01_series(series: &Column) -> bool {
     }
 }
 
-const BOOLEAN_NOTE: &str = "See docs §3.4.1-§3.4.5";
-const CONTINUOUS_NOTE: &str = "See docs §3.4.6-§3.4.8";
+const BOOLEAN_NOTE: &str = "See docs sections 3.4.1-3.4.5";
+const CONTINUOUS_NOTE: &str = "See docs sections 3.4.6-3.4.8";
 
 pub const BOOLEAN_FEATURES: &[&str] = &[
     // This list is the boolean predicate search surface. Removing a name here

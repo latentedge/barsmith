@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CSV="${BARSMITH_BENCH_CSV:-tests/data/ohlcv_tiny.csv}"
 OUT_DIR="${BARSMITH_BENCH_OUT:-tmp/benchmark-smoke}"
+RUNS_ROOT="$OUT_DIR/artifacts"
+RUN_ID="${BARSMITH_BENCH_RUN_ID:-benchmark_smoke}"
 MAX_DEPTH="${BARSMITH_BENCH_MAX_DEPTH:-2}"
 MIN_SAMPLES="${BARSMITH_BENCH_MIN_SAMPLES:-25}"
 MAX_COMBOS="${BARSMITH_BENCH_MAX_COMBOS:-200}"
@@ -22,7 +24,7 @@ mkdir -p "$(dirname "$OUT_DIR")"
 
 echo "== Barsmith benchmark smoke =="
 echo "csv=$CSV"
-echo "out=$OUT_DIR"
+echo "out=$RUNS_ROOT/comb/next_bar_color_and_wicks/long/benchmark_smoke/$RUN_ID"
 echo "max_depth=$MAX_DEPTH min_samples=$MIN_SAMPLES max_combos=$MAX_COMBOS batch_size=$BATCH_SIZE workers=$WORKERS"
 
 cargo test -p barsmith_rs --test unranking
@@ -35,7 +37,9 @@ cargo build --release -p barsmith_cli
   --direction long \
   --target next_bar_color_and_wicks \
   --position-sizing fractional \
-  --output-dir "$OUT_DIR" \
+  --runs-root "$RUNS_ROOT" \
+  --dataset-id benchmark_smoke \
+  --run-id "$RUN_ID" \
   --max-depth "$MAX_DEPTH" \
   --min-samples "$MIN_SAMPLES" \
   --batch-size "$BATCH_SIZE" \

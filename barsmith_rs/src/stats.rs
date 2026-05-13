@@ -63,6 +63,26 @@ impl EvaluationContext {
         config: &Config,
         comparisons: Arc<HashMap<String, ComparisonSpec>>,
     ) -> Result<Self> {
+        Self::new_inner(data, mask_cache, config, comparisons, None)
+    }
+
+    pub fn new_with_reward_column(
+        data: Arc<ColumnarData>,
+        mask_cache: Arc<MaskCache>,
+        config: &Config,
+        comparisons: Arc<HashMap<String, ComparisonSpec>>,
+        reward_column: Option<&str>,
+    ) -> Result<Self> {
+        Self::new_inner(data, mask_cache, config, comparisons, reward_column)
+    }
+
+    fn new_inner(
+        data: Arc<ColumnarData>,
+        mask_cache: Arc<MaskCache>,
+        config: &Config,
+        comparisons: Arc<HashMap<String, ComparisonSpec>>,
+        reward_column_override: Option<&str>,
+    ) -> Result<Self> {
         let position_sizing = config.position_sizing;
         let min_contracts = config.min_contracts.max(1);
         let max_contracts = config.max_contracts;
@@ -118,7 +138,8 @@ impl EvaluationContext {
             None
         };
 
-        let reward_column = detect_reward_column(&data, config)?;
+        let reward_column =
+            detect_reward_column_with_override(&data, config, reward_column_override)?;
         let (rewards, reward_finite_bitset) = match reward_column {
             Some(column) => {
                 let mut values = load_float_vector(&data, &column)?;
@@ -2073,6 +2094,26 @@ fn apply_pair_operator(left: f64, right: f64, operator: ComparisonOperator) -> b
 }
 
 pub(crate) fn detect_reward_column(data: &ColumnarData, config: &Config) -> Result<Option<String>> {
+    detect_reward_column_with_override(data, config, None)
+}
+
+pub(crate) fn detect_reward_column_with_override(
+    data: &ColumnarData,
+    config: &Config,
+    override_column: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(column) = override_column
+        .map(str::trim)
+        .filter(|column| !column.is_empty())
+    {
+        if data.has_column(column) {
+            return Ok(Some(column.to_string()));
+        }
+        return Err(anyhow!(
+            "Configured RR column '{column}' is missing from dataset"
+        ));
+    }
+
     const FALLBACK: [&str; 4] = ["rr", "reward", "r_multiple", "returns"];
     let mut candidates: Vec<String> = Vec::new();
     candidates.push(format!("rr_{}", config.target));

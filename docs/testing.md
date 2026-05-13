@@ -30,8 +30,12 @@ This builds the release CLI and exercises:
 - `run_manifest.json`,
 - Parquet part creation,
 - DuckDB catalog creation,
+- Rust-native top-result querying,
 - resume continuation,
-- top-result reporting.
+- top-result reporting,
+- Rust-native ranked formula evaluation,
+- formula CSV/JSON/FRS/equity-curve exports,
+- optional PNG plot rendering.
 
 Override paths with:
 
@@ -48,7 +52,7 @@ scripts/benchmark_smoke.sh
 ```
 
 This is a small release-mode throughput check. Use it as a sanity gate, not as a stable benchmark.
-By default it uses normal Cargo build parallelism.
+By default it uses normal Cargo build parallelism and all available Cargo build workers.
 
 On memory-constrained machines:
 

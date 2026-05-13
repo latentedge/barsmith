@@ -69,7 +69,7 @@ fn quantize_price_to_tick_basic_modes() {
 }
 
 #[test]
-fn atr_c2c_matches_python_reference_for_sample() {
+fn atr_c2c_matches_expected_sample_values() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()

@@ -8,9 +8,41 @@ Treat `--output-dir` as the run folder. Typical contents:
 
 - `barsmith_prepared.csv`
 - `run_manifest.json`
+- `command.txt`
+- `command.json`
 - `results_parquet/part-*.parquet`
 - `cumulative.duckdb`
 - `barsmith.log` (unless `--no-file-log`)
+- `checksums.sha256`
+- `reports/summary.md`
+
+For new long-running experiments, prefer the standardized layout:
+
+```bash
+barsmith_cli comb \
+  --csv ../es_30m.csv \
+  --target 2x_atr_tp_atr_stop \
+  --direction long \
+  --runs-root runs/artifacts \
+  --dataset-id es_30m_official_v2 \
+  --run-slug no_stacking \
+  --registry-dir runs/registry
+```
+
+This writes the run under:
+
+```text
+runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v2/<run-id>/
+```
+
+`runs/artifacts/` is ignored by Git. The optional registry JSON under
+`runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json` is designed
+to be small enough to commit: it records the run ID, dataset ID, target,
+direction, Git SHA, command hash, portable run path, top metrics, and artifact
+location without embedding raw data, local artifact paths, or formula text. The
+top metrics include both best Calmar and best total R so future audits are not
+locked to one ranking lens. Non-finite metrics are recorded as explicit strings
+such as `Inf`, `-Inf`, or `NaN`.
 
 ## Resuming
 
@@ -19,9 +51,13 @@ Barsmith resumes by extending the combination enumeration stream, scoped to a ru
 Practical rules:
 
 - Reuse the same `--output-dir` to continue a run.
+- Reuse the same generated run folder to continue a standardized run.
 - Increasing `--max-depth` is allowed; Barsmith continues after the already processed lower-depth prefix.
 - If the input CSV or another resume-sensitive setting changes, Barsmith will refuse to reuse the output dir unless you pass `--force`.
 - If you want to override the stored resume offset (start from a specific point), pass `--resume-from`.
+
+Use `--run-id <ID>` when you need a stable resumable standardized folder name.
+If omitted, Barsmith creates `<UTC timestamp>_<git short sha>_<run slug>`.
 
 ## Prepared dataset overwrite (`--ack-new-df`)
 
@@ -46,6 +82,41 @@ Options:
 
 - Use `--dry-run` to validate that the catalog loads and the theoretical combination count looks sane.
 - Use `--max-combos` for a short “smoke run” that still produces real outputs.
+
+## Evaluating formulas after a run
+
+Use `eval-formulas` when a run has already produced `barsmith_prepared.csv` and you want to score a curated formula file without rerunning combination search:
+
+```bash
+barsmith_cli eval-formulas \
+  --prepared runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v2/<run-id>/barsmith_prepared.csv \
+  --formulas ./formulas.txt \
+  --target 2x_atr_tp_atr_stop \
+  --cutoff 2024-12-31 \
+  --stacking-mode no-stacking \
+  --position-sizing fractional \
+  --runs-root runs/artifacts \
+  --dataset-id es_30m_official_v2 \
+  --run-slug no_stacking_forward \
+  --registry-dir runs/registry \
+  --plot \
+  --plot-mode combined
+```
+
+This writes the forward-test under:
+
+```text
+runs/artifacts/forward-test/2x_atr_tp_atr_stop/es_30m_official_v2/2024-12-31/<run-id>/
+```
+
+The forward-test folder includes command metadata, a manifest, result CSV/JSON,
+FRS outputs, equity curves, optional plots under `plots/`, checksums, and
+`reports/summary.md`. The registry record lives under
+`runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json` and
+stores formula hashes rather than raw formula text.
+
+Equity-curve CSVs and plots are derived from evaluated formula rows after
+scoring, so they do not affect the combination-search hot path or resume state.
 
 ## Date filtering
 

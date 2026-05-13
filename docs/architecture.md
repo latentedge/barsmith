@@ -1,10 +1,10 @@
 # Architecture
 
-This page describes Barsmith’s `comb` pipeline at a high level.
+This page describes Barsmith’s supported Rust workflows at a high level.
 
 ## Crates
 
-- `barsmith_cli`: CLI entrypoint (`comb`)
+- `barsmith_cli`: CLI entrypoint (`comb`, `eval-formulas`, `results`)
 - `barsmith_builtin`: minimal built-in feature engineering + target labeling used by the default CLI
 - `barsmith_rs`: core library (dataset loading, combination enumeration, evaluation, storage)
 - `custom_rs`: example/advanced engine (not required by the default CLI)
@@ -26,6 +26,17 @@ This page describes Barsmith’s `comb` pipeline at a high level.
 
 The README contains a detailed flowchart: see `README.md` (“How `comb` works”).
 
+## Formula evaluation flow
+
+`eval-formulas` is a read-only evaluator over an existing prepared dataset unless output paths are provided.
+
+1. The CLI parses the ranked formula file into boolean flags and comparison clauses.
+2. `formula_eval` loads `barsmith_prepared.csv`, validates target/RR/exit/sizing columns, and splits pre/post windows around the cutoff.
+3. Distinct formula clauses are converted into bitsets once per window.
+4. Formula clause indices are evaluated through the same `stats::evaluate_combination_indices` path used by combination search.
+5. Optional FRS runs the same formulas across annual windows, then scores return consistency, drawdown shape, stability, and trade count.
+6. Optional equity-curve exports replay selected top formulas through the shared selection logic and keep plotting outside the evaluator path.
+
 ## Durability model
 
 Barsmith writes incremental Parquet parts under `output-dir/results_parquet/` and maintains a DuckDB catalog (`output-dir/cumulative.duckdb`) that provides a stable `results` view across all parts.
@@ -40,6 +51,9 @@ Resume is index-based and protected by `run_manifest.json`, which binds the outp
 - `batch_tuning`: pure auto-batch heuristic and tests.
 - `subset_pruning`: depth-2 dead-pair cache and background snapshot saver.
 - `storage`: Parquet/DuckDB persistence, resume metadata, and top-results queries.
+- `formula`: ranked formula parsing and clause normalization.
+- `formula_eval`: prepared-dataset formula evaluation, FRS wiring, and equity-curve row generation.
+- `frs`: Forward Robustness Score component calculation.
 - `bitset`: compact mask storage plus scalar/SIMD scan loops used by the evaluator.
 - `stats`: evaluation context and bitset-backed combination evaluation.
 - `stats/metrics`: core/full metric accumulation and sample-quality helpers.

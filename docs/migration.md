@@ -4,6 +4,23 @@ Barsmith is currently unstable, so breaking changes can happen before a stable r
 
 ## Unreleased
 
+### Rust-native formula evaluation and result queries
+
+Ranked formula evaluation now lives in `barsmith_cli eval-formulas`. The command reads an existing `barsmith_prepared.csv`, evaluates AND-only formula clauses with the same stacking, reward, sizing, cost, and equity semantics used by Barsmith, computes optional Forward Robustness Score outputs, and can export equity curves and PNG plots.
+
+`eval-formulas` now supports the same standard output contract as `comb` through
+`--runs-root`, `--output-dir`, `--dataset-id`, `--run-id`, and `--registry-dir`.
+When a standard run folder is selected, formula CSV/JSON, FRS outputs,
+equity-curve exports, optional plots, command metadata, manifest, checksums, and
+`reports/summary.md` are written into that folder by default. Explicit
+`--csv-out`, `--json-out`, `--frs-out`, `--frs-windows-out`,
+`--equity-curves-out`, `--plot-out`, and `--plot-dir` still override individual
+artifact paths.
+
+The old external result-query script has been removed. Use `barsmith_cli results` for routine top-result queries against `cumulative.duckdb` and `results_parquet/`.
+
+Unsupported formula modes are intentionally not carried forward. Translate any formula syntax outside boolean flags, feature-vs-constant comparisons, feature-vs-feature comparisons, and `&&` conjunctions before running.
+
 ### AND-only combination logic
 
 The `--logic` / `--logic-mode` CLI surface and the internal `LogicMode` config enum have been removed. Barsmith currently supports AND-only feature combinations. Existing scripts that pass `--logic and`, `--logic or`, or `--logic both` must remove that flag.

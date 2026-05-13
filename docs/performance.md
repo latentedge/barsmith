@@ -30,6 +30,8 @@ Performance-sensitive refactors should preserve these invariants unless the PR i
 - Reporting queries run after ingestion; they do not participate in the evaluator hot path.
 - `core` stats should remain cheap enough for high-throughput sweeps, while `full` stats can spend more time on shape metrics.
 
+`eval-formulas` is optimized for a ranked formula list rather than a combinatorial sweep. It builds each distinct formula clause mask once per evaluation window, reuses the shared Barsmith evaluator for trade selection and statistics, and keeps plotting/export work outside the evaluator path.
+
 ## CPU portability vs speed
 
 This repo’s `.cargo/config.toml` sets `target-cpu=native` for local performance. This is great for on-machine runs, but not ideal for distributing binaries across heterogeneous CPUs.

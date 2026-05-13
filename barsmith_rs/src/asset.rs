@@ -29,7 +29,7 @@ static ASSET_PROFILES: Lazy<HashMap<&'static str, AssetProfile>> = Lazy::new(|| 
             point_value: 50.0,
             tick_size: 0.25,
             tick_value: 12.50,
-            // IBKR all-in ~ $4.50 per round turn ⇒ ~$2.25 per side.
+            // IBKR all-in is roughly $4.50 per round turn, or $2.25 per side.
             ibkr_commission_per_side: 2.25,
             // Default slippage set to 0 ticks; configure explicitly per run if desired.
             default_slippage_ticks: 0.0,
@@ -46,7 +46,7 @@ static ASSET_PROFILES: Lazy<HashMap<&'static str, AssetProfile>> = Lazy::new(|| 
             point_value: 5.0,
             tick_size: 0.25,
             tick_value: 1.25,
-            // IBKR all-in ~ $1.14 per round turn ⇒ ~$0.57 per side.
+            // IBKR all-in is roughly $1.14 per round turn, or $0.57 per side.
             ibkr_commission_per_side: 0.57,
             // Default slippage set to 0 ticks; configure explicitly per run if desired.
             default_slippage_ticks: 0.0,
