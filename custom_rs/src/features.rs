@@ -489,11 +489,9 @@ fn audit_continuous_coverage(df: &DataFrame) {
         }
         match series.dtype() {
             DataType::Float32 | DataType::Float64 => {
-                let values = series.f64().ok();
-                if values.is_none() {
+                let Some(values) = series.f64().ok() else {
                     continue;
-                }
-                let values = values.unwrap();
+                };
                 let mut finite: Vec<f64> = values
                     .into_iter()
                     .flatten()
@@ -502,7 +500,7 @@ fn audit_continuous_coverage(df: &DataFrame) {
                 if finite.len() < 2 {
                     continue;
                 }
-                finite.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                finite.sort_by(f64::total_cmp);
                 let n = finite.len();
                 let p1 = finite[(0.01 * (n - 1) as f64) as usize];
                 let p99 = finite[(0.99 * (n - 1) as f64) as usize];

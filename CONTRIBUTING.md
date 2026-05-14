@@ -12,7 +12,8 @@ Common commands:
 - Lint: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - Test: `cargo test --workspace --all-targets --all-features`
 - Smoke: `scripts/golden_smoke.sh`
-- Benchmark smoke: `scripts/benchmark_smoke.sh`
+- Performance gate: `scripts/performance_gate.sh`
+- CLI benchmark smoke: `scripts/benchmark_smoke.sh`
 
 ## Test fixtures
 

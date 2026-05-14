@@ -92,7 +92,7 @@ pub(crate) struct SubsetCacheSaver {
 }
 
 impl SubsetCacheSaver {
-    pub(crate) fn new(path: PathBuf) -> (Self, thread::JoinHandle<()>) {
+    pub(crate) fn new(path: PathBuf) -> Result<(Self, thread::JoinHandle<()>)> {
         let (tx, rx) = mpsc::sync_channel::<Vec<u64>>(1);
         let builder = thread::Builder::new()
             .name("subset-cache-saver".to_string())
@@ -129,8 +129,8 @@ impl SubsetCacheSaver {
                     }
                 }
             })
-            .expect("failed to spawn subset-cache-saver thread");
-        (SubsetCacheSaver { tx }, handle)
+            .context("failed to spawn subset-cache-saver thread")?;
+        Ok((SubsetCacheSaver { tx }, handle))
     }
 
     pub(crate) fn enqueue_blocking(&self, snapshot: Vec<u64>) {
@@ -160,8 +160,12 @@ fn decode_cache_snapshot(data: &[u8], capacity: usize) -> Result<SubsetPruningCa
     if data.len() < 16 {
         return Ok(SubsetPruningCache::new(capacity));
     }
-    let version = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    let count = u64::from_le_bytes(data[8..16].try_into().unwrap());
+    let mut version_bytes = [0u8; 4];
+    version_bytes.copy_from_slice(&data[0..4]);
+    let version = u32::from_le_bytes(version_bytes);
+    let mut count_bytes = [0u8; 8];
+    count_bytes.copy_from_slice(&data[8..16]);
+    let count = u64::from_le_bytes(count_bytes);
     if version != 1 {
         return Ok(SubsetPruningCache::new(capacity));
     }
@@ -171,7 +175,9 @@ fn decode_cache_snapshot(data: &[u8], capacity: usize) -> Result<SubsetPruningCa
     for idx in 0..take {
         let start = 16 + idx * 8;
         let end = start + 8;
-        let key = u64::from_le_bytes(data[start..end].try_into().unwrap());
+        let mut key_bytes = [0u8; 8];
+        key_bytes.copy_from_slice(&data[start..end]);
+        let key = u64::from_le_bytes(key_bytes);
         if cache.set.insert(key) {
             cache.keys.push_back(key);
         }

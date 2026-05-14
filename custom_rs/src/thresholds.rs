@@ -98,9 +98,9 @@ fn generate_threshold_catalog_from_frame_and_ranges_json(
         if samples.len() < 2 {
             continue;
         }
-        samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let data_min = *samples.first().unwrap();
-        let data_max = *samples.last().unwrap();
+        samples.sort_by(f64::total_cmp);
+        let data_min = samples[0];
+        let data_max = samples[samples.len() - 1];
         let unique_values = samples.windows(2).filter(|w| w[0] != w[1]).count() + 1;
         let p1 = percentile(&samples, 0.01);
         let p99 = percentile(&samples, 0.99);
@@ -109,11 +109,9 @@ fn generate_threshold_catalog_from_frame_and_ranges_json(
 
         let min_val = resolve_bound(&config.min, min_override);
         let max_val = resolve_bound(&config.max, max_override);
-        if min_val.is_none() || max_val.is_none() {
+        let (Some(min_val), Some(max_val)) = (min_val, max_val) else {
             continue;
-        }
-        let min_val = min_val.unwrap();
-        let max_val = max_val.unwrap();
+        };
         if !min_val.is_finite() || !max_val.is_finite() || min_val >= max_val {
             continue;
         }
@@ -196,9 +194,9 @@ fn generate_threshold_catalog_from_frame_and_ranges_json(
                     .filter(|value| value.is_finite())
                     .collect();
                 if samples.len() >= 2 {
-                    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                    let data_min = *samples.first().unwrap();
-                    let data_max = *samples.last().unwrap();
+                    samples.sort_by(f64::total_cmp);
+                    let data_min = samples[0];
+                    let data_max = samples[samples.len() - 1];
                     let mid = (data_min + data_max) / 2.0;
                     let feature_name = series.name().to_string();
                     let descriptor_name =
@@ -352,14 +350,14 @@ fn round_to_nice_multiple(value: f64, down: bool) -> f64 {
                 .iter()
                 .copied()
                 .filter(|candidate| *candidate <= value)
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .max_by(|a, b| a.total_cmp(b))
                 .unwrap_or(0.0)
         } else {
             -candidates
                 .iter()
                 .copied()
                 .filter(|candidate| *candidate <= value.abs())
-                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .min_by(|a, b| a.total_cmp(b))
                 .unwrap_or(magnitude * 10.0)
         }
     } else if value > 0.0 {
@@ -367,14 +365,14 @@ fn round_to_nice_multiple(value: f64, down: bool) -> f64 {
             .iter()
             .copied()
             .filter(|candidate| *candidate >= value)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(*candidates.last().unwrap())
+            .min_by(|a, b| a.total_cmp(b))
+            .unwrap_or(candidates[candidates.len() - 1])
     } else {
         -candidates
             .iter()
             .copied()
             .filter(|candidate| *candidate >= value.abs())
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(0.0)
     }
 }
@@ -421,8 +419,7 @@ fn calculate_optimal_increment(
             .min_by(|a, b| {
                 (a - ideal_increment)
                     .abs()
-                    .partial_cmp(&(b - ideal_increment).abs())
-                    .unwrap()
+                    .total_cmp(&(b - ideal_increment).abs())
             })
             .unwrap_or(ideal_increment)
     })

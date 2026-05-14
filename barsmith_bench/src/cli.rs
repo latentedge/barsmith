@@ -50,7 +50,7 @@ pub struct RunArgs {
     #[arg(long = "work-dir", default_value = "target/barsmith-bench/work")]
     pub work_dir: PathBuf,
 
-    /// Existing barsmith_cli binary. Defaults to target/release/barsmith_cli.
+    /// Existing barsmith_cli binary for CLI suites. If omitted, uses target/release/barsmith_cli.
     #[arg(long = "barsmith-bin", value_hint = clap::ValueHint::FilePath)]
     pub barsmith_bin: Option<PathBuf>,
 

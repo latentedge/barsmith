@@ -163,26 +163,26 @@ pub fn query_result_store(query: &ResultQuery) -> Result<Vec<ResultRow>> {
     );
 
     let order_expression = query.rank_by.order_expression();
-    let (sql, with_calmar) = match query.min_calmar {
-        Some(_) => (
+    let (sql, min_calmar) = match query.min_calmar {
+        Some(min_calmar) => (
             format!("{sql_base} AND calmar_ratio >= ? ORDER BY {order_expression} DESC LIMIT ?"),
-            true,
+            Some(min_calmar),
         ),
         None => (
             format!("{sql_base} ORDER BY {order_expression} DESC LIMIT ?"),
-            false,
+            None,
         ),
     };
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = if with_calmar {
+    let mut rows = if let Some(min_calmar) = min_calmar {
         stmt.query(params![
             query.min_sample_size as i64,
             query.min_win_rate,
             query.max_drawdown,
             query.direction,
             query.target,
-            query.min_calmar.unwrap(),
+            min_calmar,
             query.limit as i64,
         ])?
     } else {
@@ -558,19 +558,18 @@ impl CumulativeStore {
             WHERE total_bars >= ?
               AND max_drawdown <= ?";
 
-        let (sql, with_calmar) = match min_calmar {
-            Some(_) => (
+        let (sql, min_calmar) = match min_calmar {
+            Some(min_calmar) => (
                 format!("{sql_base} AND calmar_ratio >= ? ORDER BY calmar_ratio DESC LIMIT ?"),
-                true,
+                Some(min_calmar),
             ),
             None => (
                 format!("{sql_base} ORDER BY calmar_ratio DESC LIMIT ?"),
-                false,
+                None,
             ),
         };
         let mut stmt = self.duckdb_conn.prepare(&sql)?;
-        let mut rows = if with_calmar {
-            let min_calmar = min_calmar.unwrap();
+        let mut rows = if let Some(min_calmar) = min_calmar {
             stmt.query(params![
                 min_sample_size as i64,
                 max_drawdown,

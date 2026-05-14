@@ -47,10 +47,9 @@ The `comb` evaluator is intentionally narrow:
 When profiling combination search, start with the synthetic hard-gate benchmark:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
-  --suite comb-eval \
-  --samples 21 \
-  --out target/barsmith-bench/comb-eval-current.json
+BARSMITH_PERF_SUITE=comb-eval \
+BARSMITH_PERF_REPORT=target/barsmith-bench/comb-eval-current.json \
+scripts/performance_gate.sh
 ```
 
 Then use a Tier C CLI profile only to confirm end-to-end behavior on your actual data:
@@ -114,19 +113,15 @@ Do not commit Tier C raw data or generated benchmark outputs.
 Run a structured benchmark report from the repo root:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
-  --suite smoke \
-  --samples 21 \
-  --out target/barsmith-bench/current.json
+BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate.sh
 ```
 
 Compare two reports:
 
 ```bash
-cargo run --release -p barsmith_bench -- compare \
-  --baseline target/barsmith-bench/baseline.json \
-  --candidate target/barsmith-bench/current.json \
-  --fail-on-regression
+BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+  scripts/performance_gate.sh
 ```
 
 The JSON report records git SHA, dirty state, Rust version, target triple, OS/arch, CPU model, Cargo profile label, fixture hashes, samples, median, p95, min, max, mean, standard deviation, regression policy, and benchmark status.
@@ -134,6 +129,16 @@ The JSON report records git SHA, dirty state, Rust version, target triple, OS/ar
 When reading comparison output, negative deltas are faster than the baseline and positive deltas are slower. Median is the normal-case timing and is the main signal for stable microbenchmarks. p95 is the tail sample and helps catch occasional slow paths. Mean confirms whether a p95 spike reflects the whole run or just one noisy sample.
 
 The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite smoke` for the fast pre-push gate.
+
+The preferred wrapper is:
+
+```bash
+scripts/performance_gate.sh
+```
+
+Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to enforce a
+same-machine comparison with `--fail-on-regression`. Without a baseline, the
+script writes the current report only.
 
 ## Local smoke benchmark
 
@@ -145,6 +150,11 @@ scripts/benchmark_smoke.sh
 ```
 
 `scripts/benchmark_smoke.sh` is a thin wrapper around `barsmith_bench`. By default it runs the `comb-cli` suite and writes `target/barsmith-bench/benchmark-smoke.json`.
+For CLI suites it builds the release benchmark and CLI binaries once, then invokes the benchmark binary directly. It is intentionally review-only because it includes CLI startup, feature engineering, storage, and filesystem noise. Use `scripts/performance_gate.sh` for blocking hot-path regression checks.
+
+When running CLI suites through `barsmith_bench` directly, build `barsmith_cli`
+first or pass `--barsmith-bin` to an existing release binary. The benchmark
+runner does not shell out to Cargo for CLI binaries.
 
 Override the fixture and size without editing the script:
 

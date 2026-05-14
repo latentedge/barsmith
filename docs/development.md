@@ -13,10 +13,11 @@ cargo test --workspace --all-targets --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 cargo audit --deny warnings
 scripts/golden_smoke.sh
+scripts/performance_gate.sh
 scripts/benchmark_smoke.sh
 ```
 
-`scripts/benchmark_smoke.sh` uses normal Cargo build parallelism by default and writes a structured `barsmith_bench` JSON report. On memory-constrained machines, use `CARGO_BUILD_JOBS=1 scripts/benchmark_smoke.sh` as a fallback.
+`scripts/performance_gate.sh` runs the synthetic hard-gate benchmark suite and is the normal performance-sensitive closeout gate. `scripts/benchmark_smoke.sh` runs a small review-only CLI throughput check. Both use normal Cargo build parallelism by default; on memory-constrained machines, use `CARGO_BUILD_JOBS=1 <script>` as a fallback.
 
 ## Development principles
 

@@ -111,7 +111,7 @@ fn summarize(
 
     measurement.samples_ms.sort_by(f64::total_cmp);
     let min_ms = measurement.samples_ms[0];
-    let max_ms = *measurement.samples_ms.last().expect("non-empty samples");
+    let max_ms = measurement.samples_ms[measurement.samples_ms.len() - 1];
     let median_ms = percentile_sorted(&measurement.samples_ms, 0.50);
     let p95_ms = percentile_sorted(&measurement.samples_ms, 0.95);
     let mean_ms = mean(&measurement.samples_ms);

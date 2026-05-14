@@ -733,7 +733,7 @@ impl PermutationPipeline {
         let mut subset_cache_handle: Option<thread::JoinHandle<()>> = None;
         if self.config.enable_subset_pruning {
             if let Some(path) = subset_cache_path.clone() {
-                let (saver, handle) = SubsetCacheSaver::new(path);
+                let (saver, handle) = SubsetCacheSaver::new(path)?;
                 subset_cache_saver = Some(saver);
                 subset_cache_handle = Some(handle);
             }
@@ -858,7 +858,7 @@ impl PermutationPipeline {
                         }
                         Ok(())
                     })
-                    .expect("failed to spawn cumulative-writer thread")
+                    .context("failed to spawn cumulative-writer thread")?
             };
 
             let mut batcher = IndexCombinationBatcher::new(
@@ -1100,7 +1100,7 @@ impl PermutationPipeline {
                     enumerated_count,
                     batch_start_offset,
                 })
-                .expect("writer thread dropped");
+                .map_err(|_| anyhow::anyhow!("writer thread dropped before ingest completed"))?;
                 let continue_running = tracker.record_batch(enumerated_count);
                 let ingest_secs = ingest_start.elapsed().as_secs_f32();
 

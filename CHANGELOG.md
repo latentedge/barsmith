@@ -35,6 +35,10 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Hardened `protocol validate` so it enforces strict schema and non-overlapping research windows.
 - Versioned formula-export manifests to schema `2` and renamed the source path fingerprint to `source_output_dir_path_sha256`.
 - Added the `comb-eval` hard-gate benchmark and optimized combination search with faster rank/unrank arithmetic, inline index storage, reusable batch buffers, and a precomputed trade gate for evaluator scans.
+- Added `scripts/performance_gate.sh` as the default synthetic hard-gate benchmark wrapper and made `benchmark_smoke.sh` a suite-aware, build-once review-only throughput check.
+- Removed the benchmark runner's internal Cargo-build fallback for CLI suites; scripts now build release binaries explicitly before timing.
+- Moved the larger CLI dry-run parity test into the CLI test package to avoid nested `cargo run` rebuilds from `custom_rs` tests.
+- Hardened several non-hot-path runtime boundaries by returning contextual errors for writer/subset-saver thread failures and removing avoidable unwraps from storage, subset-cache decoding, and finite-float sorting helpers.
 
 ## 0.1.0
 

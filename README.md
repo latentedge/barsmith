@@ -261,7 +261,9 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+cargo audit --deny warnings
 scripts/golden_smoke.sh
+scripts/performance_gate.sh
 scripts/benchmark_smoke.sh
 ```
 
@@ -326,13 +328,12 @@ Internal benchmark (not a guarantee): on a MacBook Pro (Apple M4), Barsmith expl
 Use the Rust-native benchmark gate for performance-sensitive changes:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
-  --suite smoke \
-  --samples 21 \
-  --out target/barsmith-bench/current.json
+scripts/performance_gate.sh
 ```
 
-Compare against a same-machine baseline with `barsmith_bench compare --fail-on-regression`.
+Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to make the
+gate compare against a same-machine baseline with
+`barsmith_bench compare --fail-on-regression`.
 The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For comb-specific refactors, run `--suite comb-eval` directly before validating a larger local CLI profile.
 
 Performance depends heavily on:

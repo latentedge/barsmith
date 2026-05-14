@@ -54,9 +54,8 @@ scripts/golden_smoke.sh
 scripts/benchmark_smoke.sh
 ```
 
-This is a small release-mode throughput check. Use it as a sanity gate, not as a stable benchmark.
-By default it uses normal Cargo build parallelism and all available Cargo build workers.
-It writes a structured JSON report through `barsmith_bench` at `target/barsmith-bench/benchmark-smoke.json`.
+This is a small release-mode CLI throughput check. Use it as a sanity gate, not as the hard performance gate.
+By default it builds the release benchmark and CLI binaries once for the `comb-cli` suite, invokes `target/release/barsmith_bench` directly, and writes `target/barsmith-bench/benchmark-smoke.json`. If `BARSMITH_BENCH_SUITE` is set to a non-CLI suite, it skips the CLI binary build.
 
 On memory-constrained machines:
 
@@ -73,18 +72,26 @@ BARSMITH_BENCH_BATCH_SIZE=1000 \
 scripts/benchmark_smoke.sh
 ```
 
-For hot-path work, capture a baseline and compare explicitly:
+## Performance gate
+
+Use the synthetic hard-gate suite before ending performance-sensitive work:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
-  --suite smoke \
-  --samples 21 \
-  --out target/barsmith-bench/baseline.json
+scripts/performance_gate.sh
+```
 
-cargo run --release -p barsmith_bench -- compare \
-  --baseline target/barsmith-bench/baseline.json \
-  --candidate target/barsmith-bench/current.json \
-  --fail-on-regression
+This runs the stable `smoke` microbenchmarks: rank/unrank, index iteration,
+synthetic comb evaluation, gated bitset scanning, and core statistics. It avoids
+CLI startup, feature engineering, and DuckDB/Parquet noise so the result is a
+better signal for hot-path regressions.
+
+For hot-path work, capture a same-machine baseline and compare explicitly:
+
+```bash
+BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json scripts/performance_gate.sh
+BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+  scripts/performance_gate.sh
 ```
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.

@@ -1592,8 +1592,9 @@ fn buy_and_hold(data: &ColumnarData, capital_dollar: f64) -> Result<Option<BuyAn
         return Ok(None);
     }
 
-    let start = samples.first().copied().unwrap();
-    let end = samples.last().copied().unwrap();
+    let Some((start, end)) = samples.first().copied().zip(samples.last().copied()) else {
+        return Ok(None);
+    };
     let start_close = start.1;
     let mut peak = 1.0_f64;
     let mut max_drawdown_pct = 0.0_f64;

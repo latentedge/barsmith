@@ -12,16 +12,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn barsmith_cmd() -> Command {
-    if let Some(bin) = option_env!("CARGO_BIN_EXE_barsmith_cli") {
-        Command::new(bin)
-    } else {
-        let mut cmd = Command::new("cargo");
-        cmd.arg("run")
-            .arg("--manifest-path")
-            .arg(workspace_root().join("Cargo.toml"))
-            .args(["-p", "barsmith_cli", "--"]);
-        cmd
-    }
+    Command::new(env!("CARGO_BIN_EXE_barsmith_cli"))
 }
 
 #[test]
@@ -89,6 +80,76 @@ fn cli_runs_on_sample_dataset() {
     ] {
         assert!(path.exists(), "expected {}", path.display());
     }
+}
+
+#[test]
+fn cli_dry_run_prepares_larger_sample_dataset() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("es_30m_sample.csv");
+    assert!(
+        sample_csv.exists(),
+        "sample CSV missing at {}",
+        sample_csv.display()
+    );
+
+    let temp_dir = tempdir().expect("temp run root");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let output_dir = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("parity_es")
+        .join("parity_es_check");
+
+    let mut cmd = barsmith_cmd();
+    let status = cmd
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "long",
+            "--target",
+            "next_bar_color_and_wicks",
+            "--position-sizing",
+            "fractional",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry dir"),
+            "--dataset-id",
+            "parity_es",
+            "--run-id",
+            "parity_es_check",
+            "--max-depth",
+            "3",
+            "--min-samples",
+            "500",
+            "--date-start",
+            "2024-01-01",
+            "--date-end",
+            "2024-12-31",
+            "--batch-size",
+            "50",
+            "--workers",
+            "1",
+            "--max-combos",
+            "1",
+            "--dry-run",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn barsmith_cli");
+
+    assert!(status.success(), "barsmith_cli exited with {status:?}");
+    assert!(
+        output_dir.join("barsmith_prepared.csv").exists(),
+        "expected barsmith_prepared.csv at {}",
+        output_dir.display()
+    );
 }
 
 #[test]

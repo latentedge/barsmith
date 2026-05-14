@@ -42,5 +42,8 @@ jobs:
       - name: Golden smoke
         run: scripts/golden_smoke.sh
 
-      - name: Rust benchmark smoke
+      - name: Rust synthetic performance gate
+        run: scripts/performance_gate.sh
+
+      - name: Rust CLI benchmark smoke
         run: scripts/benchmark_smoke.sh

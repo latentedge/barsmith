@@ -26,10 +26,7 @@ For hot-path changes, capture a baseline before the change and compare after the
 Run the fast benchmark gate:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
-  --suite smoke \
-  --samples 21 \
-  --out target/barsmith-bench/current.json
+scripts/performance_gate.sh
 ```
 
 The `smoke` suite is the normal pre-push performance gate. It includes:
@@ -42,8 +39,10 @@ The `smoke` suite is the normal pre-push performance gate. It includes:
 Run the broader local suite:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
+cargo build --release -p barsmith_bench -p barsmith_cli
+target/release/barsmith_bench run \
   --suite all \
+  --barsmith-bin target/release/barsmith_cli \
   --samples 7 \
   --out target/barsmith-bench/all-current.json
 ```
@@ -51,10 +50,10 @@ cargo run --release -p barsmith_bench -- run \
 Compare a candidate to a same-machine baseline:
 
 ```bash
-cargo run --release -p barsmith_bench -- compare \
-  --baseline target/barsmith-bench/baseline.json \
-  --candidate target/barsmith-bench/current.json \
-  --fail-on-regression
+BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json scripts/performance_gate.sh
+BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+  scripts/performance_gate.sh
 ```
 
 Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.
@@ -66,7 +65,8 @@ Comparison deltas are relative to the baseline: negative means faster, positive 
 For combination-search refactors, run the `comb-eval` suite directly before a larger CLI profile:
 
 ```bash
-cargo run --release -p barsmith_bench -- run \
+cargo build --release -p barsmith_bench
+target/release/barsmith_bench run \
   --suite comb-eval \
   --samples 21 \
   --out target/barsmith-bench/comb-eval-current.json

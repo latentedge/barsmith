@@ -137,17 +137,10 @@ fn ensure_barsmith_cli(args: &RunArgs) -> Result<PathBuf> {
     }
 
     let binary = default_binary_path();
-    let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "barsmith_cli"])
-        .status()
-        .context("failed to spawn cargo build for barsmith_cli")?;
-    if !status.success() {
-        return Err(anyhow!("cargo build --release -p barsmith_cli failed"));
-    }
     if !binary.is_file() {
         return Err(anyhow!(
-            "barsmith_cli build finished, but {} was not created",
-            binary.display()
+            "CLI benchmark suites need an existing barsmith_cli binary. Build it with `cargo build --release -p barsmith_cli` or pass --barsmith-bin; expected default path {}",
+            binary.display(),
         ));
     }
     Ok(binary)
