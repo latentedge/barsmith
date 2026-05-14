@@ -89,6 +89,8 @@ cargo run --release -p barsmith_bench -- compare \
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 
+The `smoke` benchmark suite covers the main stable hot paths: combination rank/unrank, index iteration, synthetic combination evaluation, gated bitset scans, and core stats. For combination-search performance work, run `--suite comb-eval` directly and then confirm with a Tier C CLI profile on local data.
+
 ## Fixture tiers
 
 See `benchmarks/README.md`.
@@ -110,5 +112,6 @@ Add or update tests when changing:
 - no-stacking and exit-index logic,
 - storage filters and reporting filters,
 - combination enumeration, pruning, or bitset scanning,
+- combination-evaluator gating, batch reuse, or stats accumulation,
 - target generation or feature catalog construction,
 - output schema, DuckDB views, or Parquet write behavior.

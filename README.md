@@ -36,6 +36,7 @@ Not supported by the default CLI:
 ## Key features
 
 - **Combination search (`comb`)**: AND-only feature logic, depth limits, min-sample gating, optional feature-pairs, resume offsets.
+- **Performance-gated evaluator**: inline combination storage, reusable batches, precomputed trade gates, and Rust-native hard-gate benchmarks for the search hot path.
 - **Formula evaluation (`eval-formulas`)**: evaluate ranked formulas on a prepared dataset with the same stacking, sizing, cost, and equity semantics used by Barsmith.
 - **Holdout-aware selection**: default pre-ranked, post-confirmed formula selection with explicit gate artifacts.
 - **Strict research workflow**: protocol manifests, formula-export provenance, validation/lockbox/live-shadow stages, PBO/CSCV, PSR/DSR, and stress reports for overfit-resistant research.
@@ -339,6 +340,7 @@ cargo run --release -p barsmith_bench -- run \
 ```
 
 Compare against a same-machine baseline with `barsmith_bench compare --fail-on-regression`.
+The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For comb-specific refactors, run `--suite comb-eval` directly before validating a larger local CLI profile.
 
 Performance depends heavily on:
 - feature catalog size and depth

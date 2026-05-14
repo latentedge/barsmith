@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use smallvec::SmallVec;
 
 use crate::feature::FeatureDescriptor;
 
@@ -6,7 +7,7 @@ use crate::feature::FeatureDescriptor;
 pub type Combination = Vec<FeatureDescriptor>;
 
 /// Feature-catalog indices used in the evaluator's hot path.
-pub type IndexCombination = Vec<usize>;
+pub type IndexCombination = SmallVec<[usize; 8]>;
 
 /// Return C(n, k), or 0 when k is larger than n.
 pub fn combinations_for_depth(feature_count: usize, depth: usize) -> u128 {
@@ -106,11 +107,15 @@ fn find_lex_element(remaining: u128, n: usize, start: usize, elements_remaining:
 
 /// Count combinations that start with an index less than `c`.
 fn count_combos_before(c: usize, n: usize, start: usize, elements_remaining: usize) -> u128 {
-    let mut total = 0u128;
-    for idx in start..c {
-        total += combinations_for_depth(n - idx - 1, elements_remaining - 1);
+    if c <= start || elements_remaining == 0 {
+        return 0;
     }
-    total
+
+    // Hockey-stick identity:
+    // sum_{idx=start}^{c-1} C(n - idx - 1, r - 1)
+    // = C(n - start, r) - C(n - c, r)
+    combinations_for_depth(n - start, elements_remaining)
+        - combinations_for_depth(n - c, elements_remaining)
 }
 
 /// Compute the rank of a sorted combination (inverse of unrank).
@@ -149,7 +154,7 @@ pub struct SeekableCombinationIterator<'a> {
     n: usize,
     max_depth: usize,
     current_depth: usize,
-    current_indices: Vec<usize>,
+    current_indices: IndexCombination,
     exhausted: bool,
 }
 
@@ -172,7 +177,7 @@ impl<'a> SeekableCombinationIterator<'a> {
                 n,
                 max_depth,
                 current_depth: 1,
-                current_indices: vec![0],
+                current_indices: [0usize].into_iter().collect(),
                 exhausted: n == 0,
             };
         }
@@ -185,7 +190,7 @@ impl<'a> SeekableCombinationIterator<'a> {
                     n,
                     max_depth,
                     current_depth: max_depth + 1,
-                    current_indices: Vec::new(),
+                    current_indices: IndexCombination::new(),
                     exhausted: true,
                 }
             } else {
@@ -194,7 +199,7 @@ impl<'a> SeekableCombinationIterator<'a> {
                     n,
                     max_depth,
                     current_depth: depth,
-                    current_indices: indices,
+                    current_indices: indices.into_iter().collect(),
                     exhausted: false,
                 }
             }
@@ -204,7 +209,7 @@ impl<'a> SeekableCombinationIterator<'a> {
                 n,
                 max_depth,
                 current_depth: max_depth + 1,
-                current_indices: Vec::new(),
+                current_indices: IndexCombination::new(),
                 exhausted: true,
             }
         }
@@ -287,7 +292,7 @@ pub struct SeekableIndexIterator {
     n: usize,
     max_depth: usize,
     current_depth: usize,
-    current_indices: Vec<usize>,
+    current_indices: IndexCombination,
     exhausted: bool,
 }
 
@@ -300,7 +305,7 @@ impl SeekableIndexIterator {
                 n,
                 max_depth,
                 current_depth: max_depth + 1,
-                current_indices: Vec::new(),
+                current_indices: IndexCombination::new(),
                 exhausted: true,
             };
         }
@@ -311,7 +316,7 @@ impl SeekableIndexIterator {
                 n,
                 max_depth,
                 current_depth: depth,
-                current_indices: indices,
+                current_indices: indices.into_iter().collect(),
                 exhausted: false,
             }
         } else {
@@ -319,7 +324,7 @@ impl SeekableIndexIterator {
                 n,
                 max_depth,
                 current_depth: max_depth + 1,
-                current_indices: Vec::new(),
+                current_indices: IndexCombination::new(),
                 exhausted: true,
             }
         }
@@ -471,13 +476,23 @@ impl IndexCombinationBatcher {
 
     pub fn next_batch(&mut self, batch_size: usize) -> Option<Vec<IndexCombination>> {
         let mut batch = Vec::with_capacity(batch_size);
+        if self.fill_batch(&mut batch, batch_size) {
+            Some(batch)
+        } else {
+            None
+        }
+    }
+
+    pub fn fill_batch(&mut self, batch: &mut Vec<IndexCombination>, batch_size: usize) -> bool {
+        batch.clear();
+        batch.reserve(batch_size);
         while batch.len() < batch_size {
             match self.iter.next() {
                 Some(combo) => batch.push(combo),
                 None => break,
             }
         }
-        if batch.is_empty() { None } else { Some(batch) }
+        !batch.is_empty()
     }
 }
 

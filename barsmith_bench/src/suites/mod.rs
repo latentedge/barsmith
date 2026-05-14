@@ -1,5 +1,6 @@
 mod bitset;
 mod cli;
+mod comb_eval;
 mod combinator;
 mod stats;
 
@@ -13,13 +14,19 @@ pub fn run_suite(args: &RunArgs, warnings: &mut Vec<String>) -> Result<Vec<Bench
         "smoke" => run_many(
             args,
             warnings,
-            &[Suite::Combinator, Suite::Bitset, Suite::Stats],
+            &[
+                Suite::Combinator,
+                Suite::CombEval,
+                Suite::Bitset,
+                Suite::Stats,
+            ],
         ),
         "all" => run_many(
             args,
             warnings,
             &[
                 Suite::Combinator,
+                Suite::CombEval,
                 Suite::Bitset,
                 Suite::Stats,
                 Suite::CombCli,
@@ -30,11 +37,12 @@ pub fn run_suite(args: &RunArgs, warnings: &mut Vec<String>) -> Result<Vec<Bench
         "combinator" => combinator::run(args),
         "bitset" => bitset::run(args),
         "stats" => stats::run(args),
+        "comb-eval" => comb_eval::run(args),
         "comb-cli" => cli::run_comb_cli(args, warnings),
         "results-cli" => cli::run_results_cli(args, warnings),
         "strict-eval" | "formula-eval" => cli::run_strict_eval(args, warnings),
         other => Err(anyhow!(
-            "unknown suite '{other}'; expected smoke, all, combinator, bitset, stats, comb-cli, results-cli, or strict-eval"
+            "unknown suite '{other}'; expected smoke, all, combinator, comb-eval, bitset, stats, comb-cli, results-cli, or strict-eval"
         )),
     }
 }
@@ -42,6 +50,7 @@ pub fn run_suite(args: &RunArgs, warnings: &mut Vec<String>) -> Result<Vec<Bench
 #[derive(Clone, Copy)]
 enum Suite {
     Combinator,
+    CombEval,
     Bitset,
     Stats,
     CombCli,
@@ -58,6 +67,7 @@ fn run_many(
     for suite in suites {
         match suite {
             Suite::Combinator => results.extend(combinator::run(args)?),
+            Suite::CombEval => results.extend(comb_eval::run(args)?),
             Suite::Bitset => results.extend(bitset::run(args)?),
             Suite::Stats => results.extend(stats::run(args)?),
             Suite::CombCli => results.extend(cli::run_comb_cli(args, warnings)?),

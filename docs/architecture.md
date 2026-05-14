@@ -82,12 +82,13 @@ First-party unsafe Rust is inventoried in `docs/unsafe.md`.
 Barsmith keeps the performance-sensitive path narrow and explicit:
 
 - `pipeline` decides what should be evaluated, but does not own per-row math.
+- `combinator` owns deterministic index streams and reusable batch filling.
 - `bitset` owns mask representation and scanner dispatch. Unsafe SIMD is isolated behind compile-time gates and safety comments.
-- `stats` owns per-combination evaluation, eligible/finite gating, and no-stacking traversal.
+- `stats` owns per-combination evaluation, the precomputed trade gate, and no-stacking traversal.
 - `stats/metrics` owns core/full metric accumulation so evaluator control flow stays easier to review.
 - `storage` owns writer-side durability. Parquet parts are written to a temporary path and renamed only after a successful write.
 
-Keep expensive work out of the per-combination loop: avoid string formatting, allocation, locking, hashing, filesystem work, and dynamic schema inspection while evaluating a candidate.
+Keep expensive work out of the per-combination loop: avoid string formatting, heap allocation, locking, hashing, filesystem work, and dynamic schema inspection while evaluating a candidate. Normal index combinations are stored inline, and the pipeline reuses batch buffers between evaluation rounds.
 
 ## Resume invariants
 

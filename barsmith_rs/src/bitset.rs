@@ -66,6 +66,55 @@ impl BitsetMask {
             support,
         }
     }
+
+    /// Build the per-run trade gate used by evaluator scans.
+    ///
+    /// Eligibility masks default to "allowed" when they are absent or shorter
+    /// than the scan window. Finite-reward masks are stricter: missing words
+    /// are treated as not tradable, matching the old per-hit RR guard.
+    pub(crate) fn from_eval_gates(
+        len: usize,
+        eligible: Option<&BitsetMask>,
+        finite: Option<&BitsetMask>,
+    ) -> Option<Self> {
+        if eligible.is_none() && finite.is_none() {
+            return None;
+        }
+
+        let words_len = len.div_ceil(64);
+        let mut words = Vec::with_capacity(words_len);
+        let rem = len % 64;
+        let last_mask = if rem == 0 {
+            u64::MAX
+        } else {
+            (1u64 << rem) - 1
+        };
+
+        for word_index in 0..words_len {
+            let mut word = u64::MAX;
+            if let Some(gate) = eligible {
+                word &= gate_word_allow_out_of_bounds_true(gate, word_index);
+            }
+            if let Some(gate) = finite {
+                if word_index < gate.words.len() {
+                    word &= gate.words[word_index];
+                } else {
+                    word = 0;
+                }
+            }
+            if word_index + 1 == words_len {
+                word &= last_mask;
+            }
+            words.push(word);
+        }
+
+        let support = words.iter().map(|w| w.count_ones() as usize).sum();
+        Some(Self {
+            words,
+            len,
+            support,
+        })
+    }
 }
 
 /// In-memory catalog of bitset masks for all features in the current run.
@@ -153,11 +202,133 @@ pub(crate) fn scan_bitsets_scalar_dyn_gated(
     gate_finite: Option<&BitsetMask>,
     on_hit: &mut dyn FnMut(usize),
 ) -> usize {
+    if gate_finite.is_none() {
+        return scan_bitsets_scalar_precombined_gated(
+            combo_bitsets,
+            max_len,
+            gate_eligible,
+            on_hit,
+        );
+    }
+    let gate = BitsetMask::from_eval_gates(max_len, gate_eligible, gate_finite);
+    scan_bitsets_scalar_precombined_gated(combo_bitsets, max_len, gate.as_ref(), on_hit)
+}
+
+pub(crate) fn scan_bitsets_scalar_precombined_gated(
+    combo_bitsets: &[&BitsetMask],
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
     if combo_bitsets.is_empty() || max_len == 0 {
         return 0;
     }
 
-    let words_len = max_len.div_ceil(64).min(combo_bitsets[0].words.len());
+    match combo_bitsets {
+        [one] => scan_bitsets_one_gated(one, max_len, gate, on_hit),
+        [first, second] => scan_bitsets_two_gated(first, second, max_len, gate, on_hit),
+        [first, second, third] => {
+            scan_bitsets_three_gated(first, second, third, max_len, gate, on_hit)
+        }
+        _ => scan_bitsets_many_gated(combo_bitsets, max_len, gate, on_hit),
+    }
+}
+
+fn scan_bitsets_one_gated(
+    first: &BitsetMask,
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    scan_words_gated(
+        max_len,
+        first.words.len(),
+        gate,
+        |word_index| first.words[word_index],
+        on_hit,
+    )
+}
+
+fn scan_bitsets_two_gated(
+    first: &BitsetMask,
+    second: &BitsetMask,
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    let words_len = first.words.len().min(second.words.len());
+    scan_words_gated(
+        max_len,
+        words_len,
+        gate,
+        |word_index| first.words[word_index] & second.words[word_index],
+        on_hit,
+    )
+}
+
+fn scan_bitsets_three_gated(
+    first: &BitsetMask,
+    second: &BitsetMask,
+    third: &BitsetMask,
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    let words_len = first
+        .words
+        .len()
+        .min(second.words.len())
+        .min(third.words.len());
+    scan_words_gated(
+        max_len,
+        words_len,
+        gate,
+        |word_index| first.words[word_index] & second.words[word_index] & third.words[word_index],
+        on_hit,
+    )
+}
+
+fn scan_bitsets_many_gated(
+    combo_bitsets: &[&BitsetMask],
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    let words_len = combo_bitsets
+        .iter()
+        .map(|bitset| bitset.words.len())
+        .min()
+        .unwrap_or(0);
+    scan_words_gated(
+        max_len,
+        words_len,
+        gate,
+        |word_index| {
+            let mut combined = u64::MAX;
+            for bitset in combo_bitsets {
+                combined &= bitset.words[word_index];
+            }
+            combined
+        },
+        on_hit,
+    )
+}
+
+fn scan_words_gated<C>(
+    max_len: usize,
+    words_len: usize,
+    gate: Option<&BitsetMask>,
+    mut combine_word: C,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize
+where
+    C: FnMut(usize) -> u64,
+{
+    if words_len == 0 {
+        return 0;
+    }
+
+    let words_len = max_len.div_ceil(64).min(words_len);
     let mut scan_total = 0usize;
     let rem = max_len % 64;
     let last_mask = if rem == 0 {
@@ -167,10 +338,7 @@ pub(crate) fn scan_bitsets_scalar_dyn_gated(
     };
 
     for word_index in 0..words_len {
-        let mut combined = u64::MAX;
-        for bitset in combo_bitsets {
-            combined &= bitset.words[word_index];
-        }
+        let mut combined = combine_word(word_index);
         if word_index + 1 == words_len {
             combined &= last_mask;
         }
@@ -180,10 +348,7 @@ pub(crate) fn scan_bitsets_scalar_dyn_gated(
         }
 
         let mut gated = combined;
-        if let Some(gate) = gate_eligible {
-            gated &= gate_word_allow_out_of_bounds_true(gate, word_index);
-        }
-        if let Some(gate) = gate_finite {
+        if let Some(gate) = gate {
             if word_index < gate.words.len() {
                 gated &= gate.words[word_index];
             } else {
@@ -503,5 +668,59 @@ mod tests {
 
         assert_eq!(total, 3, "scan total should count combo mask support");
         assert_eq!(hits, vec![2], "gates should restrict callback hits");
+    }
+
+    #[test]
+    fn precomputed_eval_gate_matches_separate_gates() {
+        let combo = BitsetMask::from_bools(&[true, true, true, false, true]);
+        let eligible = BitsetMask::from_bools(&[true, false, true, true, true]);
+        let finite = BitsetMask::from_bools(&[false, true, true, true, false]);
+        let gate = BitsetMask::from_eval_gates(5, Some(&eligible), Some(&finite))
+            .expect("expected a combined gate");
+
+        let mut separate_hits = Vec::new();
+        let separate_total = scan_bitsets_scalar_dyn_gated(
+            &[&combo],
+            5,
+            Some(&eligible),
+            Some(&finite),
+            &mut |idx| separate_hits.push(idx),
+        );
+
+        let mut combined_hits = Vec::new();
+        let combined_total =
+            scan_bitsets_scalar_precombined_gated(&[&combo], 5, Some(&gate), &mut |idx| {
+                combined_hits.push(idx)
+            });
+
+        assert_eq!(combined_total, separate_total);
+        assert_eq!(combined_hits, separate_hits);
+    }
+
+    #[test]
+    fn small_depth_scans_match_generic_path() {
+        let first = BitsetMask::from_bools(&[true, true, false, true, true, false, true]);
+        let second = BitsetMask::from_bools(&[true, false, true, true, false, true, true]);
+        let third = BitsetMask::from_bools(&[false, true, true, true, true, false, true]);
+        let gate = BitsetMask::from_bools(&[true, true, true, false, true, true, false]);
+        let masks = [&first, &second, &third];
+
+        for depth in 1..=3 {
+            let selected = &masks[..depth];
+
+            let mut specialized_hits = Vec::new();
+            let specialized_total =
+                scan_bitsets_scalar_precombined_gated(selected, 7, Some(&gate), &mut |idx| {
+                    specialized_hits.push(idx)
+                });
+
+            let mut generic_hits = Vec::new();
+            let generic_total = scan_bitsets_many_gated(selected, 7, Some(&gate), &mut |idx| {
+                generic_hits.push(idx)
+            });
+
+            assert_eq!(specialized_total, generic_total, "depth {depth}");
+            assert_eq!(specialized_hits, generic_hits, "depth {depth}");
+        }
     }
 }

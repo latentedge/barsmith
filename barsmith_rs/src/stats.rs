@@ -5,10 +5,11 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
+use smallvec::SmallVec;
 
 pub use crate::bitset::BitsetCatalog;
 use crate::bitset::{BitsetMask, scan_bitsets_scalar_dyn_gated, scan_bitsets_simd_dyn_gated};
-use crate::combinator::{Combination, IndexCombination};
+use crate::combinator::Combination;
 use crate::config::{
     Config, Direction, EvalProfileMode, PositionSizingMode, StackingMode, StatsDetail,
     StopDistanceUnit,
@@ -85,8 +86,7 @@ pub struct EvaluationContext {
     rewards: Option<Arc<Vec<f64>>>,
     risk_per_contract_dollar: Option<Arc<Vec<f64>>>,
     eligible: Option<Arc<Vec<bool>>>,
-    eligible_bitset: Option<Arc<BitsetMask>>,
-    reward_finite_bitset: Option<Arc<BitsetMask>>,
+    trade_gate_bitset: Option<Arc<BitsetMask>>,
     stacking_mode: StackingMode,
     exit_indices: Option<Arc<Vec<usize>>>,
     row_count: usize,
@@ -239,6 +239,12 @@ impl EvaluationContext {
             }
             None => (None, None),
         };
+        let trade_gate_bitset = BitsetMask::from_eval_gates(
+            target.len(),
+            eligible_bitset.as_deref(),
+            reward_finite_bitset.as_deref(),
+        )
+        .map(Arc::new);
 
         let stacking_mode = config.stacking_mode;
         let exit_indices = if stacking_mode == StackingMode::NoStacking {
@@ -270,8 +276,7 @@ impl EvaluationContext {
             rewards,
             risk_per_contract_dollar,
             eligible,
-            eligible_bitset,
-            reward_finite_bitset,
+            trade_gate_bitset,
             stacking_mode,
             exit_indices,
             row_count: data.approx_rows(),
@@ -313,12 +318,8 @@ impl EvaluationContext {
         self.exit_indices.as_deref().map(|values| values.as_slice())
     }
 
-    fn eligible_bitset(&self) -> Option<&BitsetMask> {
-        self.eligible_bitset.as_deref()
-    }
-
-    fn reward_finite_bitset(&self) -> Option<&BitsetMask> {
-        self.reward_finite_bitset.as_deref()
+    fn trade_gate_bitset(&self) -> Option<&BitsetMask> {
+        self.trade_gate_bitset.as_deref()
     }
 
     pub fn position_sizing(&self) -> PositionSizingMode {
@@ -629,13 +630,13 @@ pub fn evaluate_combination(
 }
 
 pub fn evaluate_combination_indices(
-    indices: &IndexCombination,
+    indices: &[usize],
     ctx: &EvaluationContext,
     bitsets: &BitsetCatalog,
     min_sample_size: usize,
 ) -> Result<StatSummary> {
     let depth = indices.len();
-    let mut combo_bitsets: Vec<&BitsetMask> = Vec::with_capacity(indices.len());
+    let mut combo_bitsets: SmallVec<[&BitsetMask; 8]> = SmallVec::with_capacity(indices.len());
     for &idx in indices {
         let mask = bitsets
             .get_by_index(idx)
@@ -686,7 +687,7 @@ impl EvalProfileTotals {
     }
 }
 
-fn should_profile_indices(indices: &IndexCombination, sample_rate: usize) -> bool {
+fn should_profile_indices(indices: &[usize], sample_rate: usize) -> bool {
     if sample_rate <= 1 {
         return true;
     }
@@ -700,7 +701,7 @@ fn should_profile_indices(indices: &IndexCombination, sample_rate: usize) -> boo
 }
 
 pub fn evaluate_combination_indices_profiled(
-    indices: &IndexCombination,
+    indices: &[usize],
     ctx: &EvaluationContext,
     bitsets: &BitsetCatalog,
     min_sample_size: usize,
@@ -718,7 +719,7 @@ pub fn evaluate_combination_indices_profiled(
 
     let depth = indices.len();
     let build_start = Instant::now();
-    let mut combo_bitsets: Vec<&BitsetMask> = Vec::with_capacity(indices.len());
+    let mut combo_bitsets: SmallVec<[&BitsetMask; 8]> = SmallVec::with_capacity(indices.len());
     for &idx in indices {
         let mask = bitsets
             .get_by_index(idx)
@@ -746,7 +747,6 @@ fn evaluate_for_bitsets_profiled(
     let mut profile = EvalProfileTotals::default();
     let target = ctx.target();
     let rewards = ctx.rewards();
-    let eligible = ctx.eligible();
     let no_stacking = ctx.stacking_mode() == StackingMode::NoStacking;
     let exit_indices = if no_stacking {
         ctx.exit_indices()
@@ -754,10 +754,7 @@ fn evaluate_for_bitsets_profiled(
     } else {
         &[]
     };
-    let gate_eligible = ctx.eligible_bitset();
-    let gate_finite = ctx.reward_finite_bitset();
-    let skip_eligible_check = gate_eligible.is_some();
-    let skip_finite_check = gate_finite.is_some();
+    let scan_gate = ctx.trade_gate_bitset();
     let position_sizing = ctx.position_sizing();
     let risk_per_contract = ctx.risk_per_contract_dollar();
     let min_contracts = ctx.min_contracts();
@@ -821,20 +818,10 @@ fn evaluate_for_bitsets_profiled(
                     if idx < next_free_idx {
                         return;
                     }
-                    if !skip_eligible_check {
-                        if let Some(mask) = eligible {
-                            if idx < mask.len() && !mask[idx] {
-                                return;
-                            }
-                        }
-                    }
                     if idx >= reward_series.len() {
                         return;
                     }
                     let rr_net = reward_series[idx];
-                    if !skip_finite_check && !rr_net.is_finite() {
-                        return;
-                    }
 
                     total += 1;
                     acc.total_bars += 1;
@@ -870,16 +857,16 @@ fn evaluate_for_bitsets_profiled(
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     } else {
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit_inner,
                         )
                     }
@@ -892,16 +879,16 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit,
                     )
                 } else {
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit_inner,
                     )
                 };
@@ -930,20 +917,10 @@ fn evaluate_for_bitsets_profiled(
                 );
 
                 let mut on_hit_inner = |idx: usize| {
-                    if !skip_eligible_check {
-                        if let Some(mask) = eligible {
-                            if idx < mask.len() && !mask[idx] {
-                                return;
-                            }
-                        }
-                    }
                     if idx >= reward_series.len() {
                         return;
                     }
                     let rr_net = reward_series[idx];
-                    if !skip_finite_check && !rr_net.is_finite() {
-                        return;
-                    }
 
                     total += 1;
                     acc.total_bars += 1;
@@ -969,16 +946,16 @@ fn evaluate_for_bitsets_profiled(
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     } else {
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit_inner,
                         )
                     }
@@ -991,16 +968,16 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit,
                     )
                 } else {
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit_inner,
                     )
                 };
@@ -1036,20 +1013,10 @@ fn evaluate_for_bitsets_profiled(
                             if idx < next_free_idx {
                                 return;
                             }
-                            if !skip_eligible_check {
-                                if let Some(mask) = eligible {
-                                    if idx < mask.len() && !mask[idx] {
-                                        return;
-                                    }
-                                }
-                            }
                             if idx >= reward_series.len() {
                                 return;
                             }
                             let rr_net = reward_series[idx];
-                            if !skip_finite_check && !rr_net.is_finite() {
-                                return;
-                            }
                             total += 1;
                             if target[idx] {
                                 label_hits += 1;
@@ -1084,16 +1051,16 @@ fn evaluate_for_bitsets_profiled(
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             } else {
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit_inner,
                                 )
                             }
@@ -1106,16 +1073,16 @@ fn evaluate_for_bitsets_profiled(
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit,
                             )
                         } else {
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit_inner,
                             )
                         };
@@ -1153,20 +1120,10 @@ fn evaluate_for_bitsets_profiled(
                         let mut label_hits = 0usize;
 
                         let mut on_hit_inner = |idx: usize| {
-                            if !skip_eligible_check {
-                                if let Some(mask) = eligible {
-                                    if idx < mask.len() && !mask[idx] {
-                                        return;
-                                    }
-                                }
-                            }
                             if idx >= reward_series.len() {
                                 return;
                             }
                             let rr_net = reward_series[idx];
-                            if !skip_finite_check && !rr_net.is_finite() {
-                                return;
-                            }
                             total += 1;
                             if target[idx] {
                                 label_hits += 1;
@@ -1191,16 +1148,16 @@ fn evaluate_for_bitsets_profiled(
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             } else {
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit_inner,
                                 )
                             }
@@ -1213,16 +1170,16 @@ fn evaluate_for_bitsets_profiled(
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit,
                             )
                         } else {
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit_inner,
                             )
                         };
@@ -1269,13 +1226,6 @@ fn evaluate_for_bitsets_profiled(
                 if idx < next_free_idx {
                     return;
                 }
-                if !skip_eligible_check {
-                    if let Some(mask) = eligible {
-                        if idx < mask.len() && !mask[idx] {
-                            return;
-                        }
-                    }
-                }
                 total += 1;
                 if target[idx] {
                     wins += 1;
@@ -1303,7 +1253,7 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
@@ -1311,7 +1261,7 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit_inner,
                     )
@@ -1322,18 +1272,12 @@ fn evaluate_for_bitsets_profiled(
                     on_hit_inner(idx);
                     profile.on_hit_ns += start.elapsed().as_nanos() as u64;
                 };
-                scan_bitsets_scalar_dyn_gated(
-                    combo_bitsets,
-                    max_len,
-                    gate_eligible,
-                    None,
-                    &mut on_hit,
-                )
+                scan_bitsets_scalar_dyn_gated(combo_bitsets, max_len, scan_gate, None, &mut on_hit)
             } else {
                 scan_bitsets_scalar_dyn_gated(
                     combo_bitsets,
                     max_len,
-                    gate_eligible,
+                    scan_gate,
                     None,
                     &mut on_hit_inner,
                 )
@@ -1372,13 +1316,6 @@ fn evaluate_for_bitsets_profiled(
             let mut wins = 0usize;
 
             let mut on_hit_inner = |idx: usize| {
-                if !skip_eligible_check {
-                    if let Some(mask) = eligible {
-                        if idx < mask.len() && !mask[idx] {
-                            return;
-                        }
-                    }
-                }
                 total += 1;
                 if target[idx] {
                     wins += 1;
@@ -1396,7 +1333,7 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
@@ -1404,7 +1341,7 @@ fn evaluate_for_bitsets_profiled(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit_inner,
                     )
@@ -1415,18 +1352,12 @@ fn evaluate_for_bitsets_profiled(
                     on_hit_inner(idx);
                     profile.on_hit_ns += start.elapsed().as_nanos() as u64;
                 };
-                scan_bitsets_scalar_dyn_gated(
-                    combo_bitsets,
-                    max_len,
-                    gate_eligible,
-                    None,
-                    &mut on_hit,
-                )
+                scan_bitsets_scalar_dyn_gated(combo_bitsets, max_len, scan_gate, None, &mut on_hit)
             } else {
                 scan_bitsets_scalar_dyn_gated(
                     combo_bitsets,
                     max_len,
-                    gate_eligible,
+                    scan_gate,
                     None,
                     &mut on_hit_inner,
                 )
@@ -1473,7 +1404,6 @@ fn evaluate_for_bitsets(
 ) -> StatSummary {
     let target = ctx.target();
     let rewards = ctx.rewards();
-    let eligible = ctx.eligible();
     let no_stacking = ctx.stacking_mode() == StackingMode::NoStacking;
     let exit_indices = if no_stacking {
         ctx.exit_indices()
@@ -1481,10 +1411,7 @@ fn evaluate_for_bitsets(
     } else {
         &[]
     };
-    let gate_eligible = ctx.eligible_bitset();
-    let gate_finite = ctx.reward_finite_bitset();
-    let skip_eligible_check = gate_eligible.is_some();
-    let skip_finite_check = gate_finite.is_some();
+    let scan_gate = ctx.trade_gate_bitset();
     let position_sizing = ctx.position_sizing();
     let risk_per_contract = ctx.risk_per_contract_dollar();
     let min_contracts = ctx.min_contracts();
@@ -1551,20 +1478,10 @@ fn evaluate_for_bitsets(
                     if idx < next_free_idx {
                         return;
                     }
-                    if !skip_eligible_check {
-                        if let Some(mask) = eligible {
-                            if idx < mask.len() && !mask[idx] {
-                                return;
-                            }
-                        }
-                    }
                     if idx >= reward_series.len() {
                         return;
                     }
                     let rr_net = reward_series[idx];
-                    if !skip_finite_check && !rr_net.is_finite() {
-                        return;
-                    }
 
                     total += 1;
                     acc.total_bars += 1;
@@ -1595,8 +1512,8 @@ fn evaluate_for_bitsets(
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     }
@@ -1605,8 +1522,8 @@ fn evaluate_for_bitsets(
                         scan_bitsets_scalar_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     }
@@ -1614,8 +1531,8 @@ fn evaluate_for_bitsets(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit,
                     )
                 };
@@ -1642,20 +1559,10 @@ fn evaluate_for_bitsets(
                 );
 
                 let mut on_hit = |idx: usize| {
-                    if !skip_eligible_check {
-                        if let Some(mask) = eligible {
-                            if idx < mask.len() && !mask[idx] {
-                                return;
-                            }
-                        }
-                    }
                     if idx >= reward_series.len() {
                         return;
                     }
                     let rr_net = reward_series[idx];
-                    if !skip_finite_check && !rr_net.is_finite() {
-                        return;
-                    }
 
                     total += 1;
                     acc.total_bars += 1;
@@ -1676,8 +1583,8 @@ fn evaluate_for_bitsets(
                         scan_bitsets_simd_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     }
@@ -1686,8 +1593,8 @@ fn evaluate_for_bitsets(
                         scan_bitsets_scalar_dyn_gated(
                             combo_bitsets,
                             max_len,
-                            gate_eligible,
-                            gate_finite,
+                            scan_gate,
+                            None,
                             &mut on_hit,
                         )
                     }
@@ -1695,8 +1602,8 @@ fn evaluate_for_bitsets(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
-                        gate_finite,
+                        scan_gate,
+                        None,
                         &mut on_hit,
                     )
                 };
@@ -1730,20 +1637,10 @@ fn evaluate_for_bitsets(
                             if idx < next_free_idx {
                                 return;
                             }
-                            if !skip_eligible_check {
-                                if let Some(mask) = eligible {
-                                    if idx < mask.len() && !mask[idx] {
-                                        return;
-                                    }
-                                }
-                            }
                             if idx >= reward_series.len() {
                                 return;
                             }
                             let rr_net = reward_series[idx];
-                            if !skip_finite_check && !rr_net.is_finite() {
-                                return;
-                            }
                             total += 1;
                             if target[idx] {
                                 label_hits += 1;
@@ -1773,8 +1670,8 @@ fn evaluate_for_bitsets(
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             }
@@ -1783,8 +1680,8 @@ fn evaluate_for_bitsets(
                                 scan_bitsets_scalar_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             }
@@ -1792,8 +1689,8 @@ fn evaluate_for_bitsets(
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit,
                             )
                         };
@@ -1829,20 +1726,10 @@ fn evaluate_for_bitsets(
                         let mut label_hits = 0usize;
 
                         let mut on_hit = |idx: usize| {
-                            if !skip_eligible_check {
-                                if let Some(mask) = eligible {
-                                    if idx < mask.len() && !mask[idx] {
-                                        return;
-                                    }
-                                }
-                            }
                             if idx >= reward_series.len() {
                                 return;
                             }
                             let rr_net = reward_series[idx];
-                            if !skip_finite_check && !rr_net.is_finite() {
-                                return;
-                            }
                             total += 1;
                             if target[idx] {
                                 label_hits += 1;
@@ -1862,8 +1749,8 @@ fn evaluate_for_bitsets(
                                 scan_bitsets_simd_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             }
@@ -1872,8 +1759,8 @@ fn evaluate_for_bitsets(
                                 scan_bitsets_scalar_dyn_gated(
                                     combo_bitsets,
                                     max_len,
-                                    gate_eligible,
-                                    gate_finite,
+                                    scan_gate,
+                                    None,
                                     &mut on_hit,
                                 )
                             }
@@ -1881,8 +1768,8 @@ fn evaluate_for_bitsets(
                             scan_bitsets_scalar_dyn_gated(
                                 combo_bitsets,
                                 max_len,
-                                gate_eligible,
-                                gate_finite,
+                                scan_gate,
+                                None,
                                 &mut on_hit,
                             )
                         };
@@ -1927,13 +1814,6 @@ fn evaluate_for_bitsets(
                 if idx < next_free_idx {
                     return;
                 }
-                if !skip_eligible_check {
-                    if let Some(mask) = eligible {
-                        if idx < mask.len() && !mask[idx] {
-                            return;
-                        }
-                    }
-                }
                 total += 1;
                 if target[idx] {
                     wins += 1;
@@ -1956,7 +1836,7 @@ fn evaluate_for_bitsets(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
@@ -1966,19 +1846,13 @@ fn evaluate_for_bitsets(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
                 }
             } else {
-                scan_bitsets_scalar_dyn_gated(
-                    combo_bitsets,
-                    max_len,
-                    gate_eligible,
-                    None,
-                    &mut on_hit,
-                )
+                scan_bitsets_scalar_dyn_gated(combo_bitsets, max_len, scan_gate, None, &mut on_hit)
             };
 
             if total < min_sample_size {
@@ -2012,13 +1886,6 @@ fn evaluate_for_bitsets(
             let mut wins = 0usize;
 
             let mut on_hit = |idx: usize| {
-                if !skip_eligible_check {
-                    if let Some(mask) = eligible {
-                        if idx < mask.len() && !mask[idx] {
-                            return;
-                        }
-                    }
-                }
                 total += 1;
                 if target[idx] {
                     wins += 1;
@@ -2031,7 +1898,7 @@ fn evaluate_for_bitsets(
                     scan_bitsets_simd_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
@@ -2041,19 +1908,13 @@ fn evaluate_for_bitsets(
                     scan_bitsets_scalar_dyn_gated(
                         combo_bitsets,
                         max_len,
-                        gate_eligible,
+                        scan_gate,
                         None,
                         &mut on_hit,
                     )
                 }
             } else {
-                scan_bitsets_scalar_dyn_gated(
-                    combo_bitsets,
-                    max_len,
-                    gate_eligible,
-                    None,
-                    &mut on_hit,
-                )
+                scan_bitsets_scalar_dyn_gated(combo_bitsets, max_len, scan_gate, None, &mut on_hit)
             };
 
             if total < min_sample_size {

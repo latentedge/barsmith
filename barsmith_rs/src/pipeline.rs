@@ -870,16 +870,18 @@ impl PermutationPipeline {
                 .num_threads(self.config.n_workers.max(1))
                 .build()
                 .context("Failed to build worker pool")?;
+            let mut batch_buffer = Vec::with_capacity(effective_batch_size);
+            let mut prune_flags: Vec<u8> = Vec::with_capacity(effective_batch_size);
 
             loop {
                 // Global enumeration cursor at the start of this batch,
                 // including any non-zero resume offset.
                 let batch_start_offset = tracker.processed() as u64;
                 let enum_start = Instant::now();
-                let batch = match batcher.next_batch(effective_batch_size) {
-                    Some(batch) => batch,
-                    None => break,
-                };
+                if !batcher.fill_batch(&mut batch_buffer, effective_batch_size) {
+                    break;
+                }
+                let batch = &batch_buffer;
                 let enum_secs = enum_start.elapsed().as_secs_f32();
 
                 let enumerated_count = batch.len();
@@ -888,7 +890,8 @@ impl PermutationPipeline {
                 let subset_start = filter_start;
                 // Use bytes rather than Vec<bool> here; avoiding bit packing
                 // matters in this hot filter loop.
-                let mut prune_flags: Vec<u8> = vec![0; batch.len()];
+                prune_flags.clear();
+                prune_flags.resize(batch.len(), 0);
 
                 // Subset-based pruning only applies for depth >= 3.
                 if let Some(cache) = &subset_cache {

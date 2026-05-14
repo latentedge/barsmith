@@ -32,6 +32,13 @@ cargo run --release -p barsmith_bench -- run \
   --out target/barsmith-bench/current.json
 ```
 
+The `smoke` suite is the normal pre-push performance gate. It includes:
+
+- `combinator`: rank/unrank and deterministic index iteration.
+- `comb-eval`: the synthetic combination-evaluator hot path.
+- `bitset`: gated bitset scanning.
+- `stats`: core metric accumulation through the shared evaluator.
+
 Run the broader local suite:
 
 ```bash
@@ -55,6 +62,17 @@ Keep generated reports under `target/barsmith-bench/**` or another ignored path 
 The report marks stable microbenchmarks as `hard-gate` and CLI end-to-end timings as `review-only`. `compare --fail-on-regression` fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes are surfaced for review instead of hard-failing the gate.
 
 Comparison deltas are relative to the baseline: negative means faster, positive means slower. Use the median as the primary signal, p95 for tail behavior, and mean to confirm whether a p95 spike is representative or just noise.
+
+For combination-search refactors, run the `comb-eval` suite directly before a larger CLI profile:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite comb-eval \
+  --samples 21 \
+  --out target/barsmith-bench/comb-eval-current.json
+```
+
+Use Tier C CLI runs to validate the full pipeline after the hard gate passes. CLI runs include feature engineering and result ingestion, so they are useful for release confidence but less stable as a regression gate.
 
 ## Golden Smoke
 

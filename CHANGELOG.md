@@ -33,6 +33,7 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Split standard-output planning, record schemas, closeout writing, checksum generation, helpers, and Markdown reports into focused modules.
 - Hardened `protocol validate` so it enforces strict schema and non-overlapping research windows.
 - Versioned formula-export manifests to schema `2` and renamed the source path fingerprint to `source_output_dir_path_sha256`.
+- Added the `comb-eval` hard-gate benchmark and optimized combination search with faster rank/unrank arithmetic, inline index storage, reusable batch buffers, and a precomputed trade gate for evaluator scans.
 
 ## 0.1.0
 

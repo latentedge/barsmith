@@ -1127,7 +1127,7 @@ fn build_formula_bitsets(
             };
             indices.push(idx);
         }
-        combinations.push(indices);
+        combinations.push(indices.into_iter().collect());
     }
 
     Ok(FormulaBitsetPlan {

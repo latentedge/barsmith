@@ -25,12 +25,59 @@ Performance-sensitive refactors should preserve these invariants unless the PR i
 
 - Feature masks are precomputed into compact bitsets before combination evaluation.
 - Combination evaluation scans bitsets by word and calls per-hit logic only after eligibility/finite gates are applied.
+- Eligibility and finite-reward gates are precombined once per evaluation context, so each candidate combination reuses the same trade gate.
+- Small combinations stay inline; the hot path should not allocate a heap `Vec` for normal depth-1 through depth-8 candidates.
 - Worker threads share immutable catalogs and avoid filesystem or DuckDB work.
 - The writer thread owns Parquet/DuckDB mutation.
 - Reporting queries run after ingestion; they do not participate in the evaluator hot path.
 - `core` stats should remain cheap enough for high-throughput sweeps, while `full` stats can spend more time on shape metrics.
 
 `eval-formulas` is optimized for a ranked formula list rather than a combinatorial sweep. It builds each distinct formula clause mask once per evaluation window, reuses the shared Barsmith evaluator for trade selection and statistics, and keeps plotting/export work outside the evaluator path.
+
+## Combination-search fast path
+
+The `comb` evaluator is intentionally narrow:
+
+- `combinator` yields deterministic index combinations and reuses the caller's batch buffer.
+- Rank/unrank arithmetic uses closed-form prefix counts; do not replace it with per-prefix loops without benchmark evidence.
+- `stats` turns each index combination into borrowed bitset references, applies the precomputed trade gate, and accumulates metrics.
+- `bitset` owns scalar/SIMD scanning details. On supported Apple Silicon builds, the aarch64 scanner keeps the gated NEON path active for the common combination depths.
+- `pipeline` owns pruning, threading, and storage handoff, but it does not perform per-row metric math.
+
+When profiling combination search, start with the synthetic hard-gate benchmark:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite comb-eval \
+  --samples 21 \
+  --out target/barsmith-bench/comb-eval-current.json
+```
+
+Then use a Tier C CLI profile only to confirm end-to-end behavior on your actual data:
+
+```bash
+cargo run --release -p barsmith_cli -- comb \
+  --csv /path/to/local-tier-c.csv \
+  --engine custom \
+  --direction long \
+  --target 2x_atr_tp_atr_stop \
+  --runs-root target/barsmith-profile/candidate \
+  --dataset-id local-tier-c \
+  --run-id comb_profile \
+  --max-depth 3 \
+  --min-samples 25 \
+  --batch-size 50000 \
+  --max-combos 500000 \
+  --stats-detail core \
+  --report off \
+  --profile-eval coarse \
+  --profile-eval-sample-rate 256 \
+  --no-file-log \
+  --quiet \
+  --force
+```
+
+CLI profiles include feature engineering, pruning, Parquet/DuckDB writes, and OS scheduling noise. Treat them as release-readiness evidence, not as a substitute for the hard-gate microbenchmarks.
 
 ## CPU portability vs speed
 
@@ -85,7 +132,7 @@ The JSON report records git SHA, dirty state, Rust version, target triple, OS/ar
 
 When reading comparison output, negative deltas are faster than the baseline and positive deltas are slower. Median is the normal-case timing and is the main signal for stable microbenchmarks. p95 is the tail sample and helps catch occasional slow paths. Mean confirms whether a p95 spike reflects the whole run or just one noisy sample.
 
-Use `--suite all` before risky hot-path refactors. Use `--suite smoke` for the fast pre-push gate.
+The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite smoke` for the fast pre-push gate.
 
 ## Local smoke benchmark
 
@@ -128,4 +175,5 @@ For any performance-sensitive PR, record:
 - exact command and environment variables,
 - wall-clock output from `/usr/bin/time -p`,
 - whether `--stats-detail` was `core` or `full`,
-- observed regression or improvement and whether it is inside budget.
+- observed regression or improvement and whether it is inside budget,
+- the hard-gate `barsmith_bench compare --fail-on-regression` result.
