@@ -40,8 +40,8 @@ The `comb` evaluator is intentionally narrow:
 
 - `combinator` yields deterministic index combinations and reuses the caller's batch buffer.
 - Rank/unrank arithmetic uses closed-form prefix counts; do not replace it with per-prefix loops without benchmark evidence.
-- `stats` turns each index combination into borrowed bitset references, applies the precomputed trade gate, and accumulates metrics.
-- `bitset` owns scalar/SIMD scanning details. On supported Apple Silicon builds, the aarch64 scanner keeps the gated NEON path active for the common combination depths.
+- `stats` turns each index combination into borrowed bitset references, orders the tiny mask set with a fixed insertion sort, applies the precomputed trade gate, and accumulates metrics.
+- `bitset` owns scalar/SIMD scanning details. On supported Apple Silicon builds, the aarch64 scanner has fixed-depth gated NEON paths for common depth-1 through depth-5 combinations and a generic fallback for deeper sets.
 - `pipeline` owns pruning, threading, and storage handoff, but it does not perform per-row metric math.
 
 When profiling combination search, start with the synthetic hard-gate benchmark:
@@ -50,6 +50,15 @@ When profiling combination search, start with the synthetic hard-gate benchmark:
 BARSMITH_PERF_SUITE=comb-eval \
 BARSMITH_PERF_REPORT=target/barsmith-bench/comb-eval-current.json \
 scripts/performance_gate.sh
+```
+
+Use the depth-5 suite for command shapes that run `--max-depth 5`:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite comb-depth5 \
+  --samples 21 \
+  --out target/barsmith-bench/comb-depth5-current.json
 ```
 
 Then use a Tier C CLI profile only to confirm end-to-end behavior on your actual data:
@@ -78,6 +87,19 @@ cargo run --release -p barsmith_cli -- comb \
 ```
 
 CLI profiles include feature engineering, pruning, Parquet/DuckDB writes, and OS scheduling noise. Treat them as release-readiness evidence, not as a substitute for the hard-gate microbenchmarks.
+
+## Target-Generation Benchmark
+
+ATR/high-low targets are easy to break while optimizing because gap opens, same-bar stop/target touches, cutoff-capped exits, NaNs, and tick rounding all affect labels and R. Use the target-generation suite before changing `custom_rs/src/engineer/targets.rs`:
+
+```bash
+cargo run --release -p barsmith_bench --features target-generation -- run \
+  --suite target-generation \
+  --samples 21 \
+  --out target/barsmith-bench/target-generation-current.json
+```
+
+The suite uses synthetic OHLCV/ATR data so it is safe to share as benchmark evidence. It is behind the `target-generation` Cargo feature so the default smoke benchmark binary stays lean and comparable to existing baselines.
 
 ## CPU portability vs speed
 
@@ -128,7 +150,7 @@ The JSON report records git SHA, dirty state, Rust version, target triple, OS/ar
 
 When reading comparison output, negative deltas are faster than the baseline and positive deltas are slower. Median is the normal-case timing and is the main signal for stable microbenchmarks. p95 is the tail sample and helps catch occasional slow paths. Mean confirms whether a p95 spike reflects the whole run or just one noisy sample.
 
-The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite smoke` for the fast pre-push gate.
+The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite comb-depth5` for max-depth-5 search changes and build `barsmith_bench` with `--features target-generation` for ATR target changes. Use `--suite smoke` for the fast pre-push gate.
 
 The preferred wrapper is:
 

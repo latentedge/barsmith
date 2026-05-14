@@ -70,7 +70,7 @@ Resume is index-based and protected by `run_manifest.json`, which binds the run 
 - `overfit`: PBO/CSCV and Sharpe-based overfit diagnostics.
 - `stress`: execution stress report types.
 - `frs`: Forward Robustness Score component calculation.
-- `bitset`: compact mask storage plus scalar/SIMD scan loops used by the evaluator.
+- `bitset`: compact mask storage, tiny support-ordering helpers, and scalar/SIMD scan loops used by the evaluator.
 - `stats`: evaluation context and bitset-backed combination evaluation.
 - `stats/metrics`: core/full metric accumulation and sample-quality helpers.
 - `combinator`: deterministic combination counting, ranking, unranking, and batching.
@@ -83,8 +83,8 @@ Barsmith keeps the performance-sensitive path narrow and explicit:
 
 - `pipeline` decides what should be evaluated, but does not own per-row math.
 - `combinator` owns deterministic index streams and reusable batch filling.
-- `bitset` owns mask representation and scanner dispatch. Unsafe SIMD is isolated behind compile-time gates and safety comments.
-- `stats` owns per-combination evaluation, the precomputed trade gate, and no-stacking traversal.
+- `bitset` owns mask representation, fixed-depth scanner dispatch for common depth-1 through depth-5 combinations, and the generic fallback. Unsafe SIMD is isolated behind compile-time gates and safety comments.
+- `stats` owns per-combination evaluation, the precomputed trade gate, tiny mask ordering by support, and no-stacking traversal.
 - `stats/metrics` owns core/full metric accumulation so evaluator control flow stays easier to review.
 - `storage` owns writer-side durability. Parquet parts are written to a temporary path and renamed only after a successful write.
 

@@ -7,6 +7,8 @@ use barsmith_rs::{Config, PermutationPipeline};
 
 use features::FeatureCatalog;
 
+#[cfg(feature = "bench-api")]
+pub use engineer::benchmark_2x_atr_tp_atr_stop_checksum;
 pub use engineer::{BacktestConfig, BacktestTargetKind, run_backtest_with_target};
 pub use engineer::{PrepareDatasetOptions, prepare_dataset, prepare_dataset_with_options};
 

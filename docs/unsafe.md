@@ -21,10 +21,13 @@ Unsafe code is limited to the private AArch64 NEON scanner functions and the sma
 
 - `scan_bitsets_neon_dyn`
 - `scan_bitsets_neon_dyn_gated`
+- `scan_bitsets_neon_fixed_gated`
 - `scan_bitsets_simd_dyn`
 - `scan_bitsets_simd_dyn_gated`
 
 These functions are compiled only for AArch64 builds with the `simd-eval` feature. `barsmith_cli` enables `simd-eval` for `barsmith_rs`, so Apple Silicon CLI builds use this path.
+
+`scan_bitsets_neon_fixed_gated` handles common depth-1 through depth-5 gated scans through the same safety model as the dynamic scanner, while avoiding the dynamic slice loop in the hottest max-depth-5 search path.
 
 ### Safety invariants
 
@@ -32,7 +35,7 @@ The NEON scanner relies on these invariants:
 
 - Every `BitsetMask` in a combination is built by Barsmith and stores masks as `Vec<u64>`.
 - Scanner loops load two `u64` lanes only when `word_index + 1 < words_len`.
-- `words_len` is derived from the first bitset and from `max_len`, and all feature masks for a run are built from the same row count.
+- `words_len` is capped by `max_len` and the shortest mask in the combination before any two-lane load.
 - Tail words are masked before counting/hit-callback traversal for non-multiple-of-64 row counts.
 - Eligible and finite gates are optional masks; out-of-bounds eligible gates are treated as permissive, while out-of-bounds finite gates are treated as no hit.
 - NEON intrinsics are behind `#[cfg(all(target_arch = "aarch64", feature = "simd-eval"))]`.
@@ -46,6 +49,8 @@ Changes to this module must:
 - Include or update scalar/SIMD parity coverage where practical.
 - Run the normal test gate plus release benchmark smoke.
 - Record before/after timing for hot-path changes that alter scan loops or mask layout.
+
+The 2026-05-14 fixed-depth NEON dispatch was accepted because scalar parity tests still cover depths 1 through 5 and the dedicated depth-5 benchmark improved median and p95 timing against the same-machine baseline.
 
 ## `barsmith_cli/src/main.rs`
 

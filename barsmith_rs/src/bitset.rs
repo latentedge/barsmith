@@ -127,6 +127,29 @@ pub struct BitsetCatalog {
     name_to_index: HashMap<String, usize>,
 }
 
+#[inline]
+pub(crate) fn sort_bitsets_by_support(bitsets: &mut [&BitsetMask]) {
+    for idx in 1..bitsets.len() {
+        let current = bitsets[idx];
+        let mut insert_at = idx;
+        while insert_at > 0 && bitsets[insert_at - 1].support > current.support {
+            bitsets[insert_at] = bitsets[insert_at - 1];
+            insert_at -= 1;
+        }
+        bitsets[insert_at] = current;
+    }
+}
+
+#[inline]
+fn common_words_len(bitsets: &[&BitsetMask], max_len: usize) -> usize {
+    bitsets
+        .iter()
+        .map(|bitset| bitset.words.len())
+        .min()
+        .unwrap_or(0)
+        .min(max_len.div_ceil(64))
+}
+
 impl BitsetCatalog {
     pub(crate) fn new(bitsets: Vec<BitsetMask>, name_to_index: HashMap<String, usize>) -> Self {
         Self {
@@ -156,7 +179,7 @@ pub(crate) fn scan_bitsets_scalar_dyn(
         return 0;
     }
 
-    let words_len = combo_bitsets[0].words.len();
+    let words_len = common_words_len(combo_bitsets, max_len);
     let mut total = 0usize;
 
     for word_index in 0..words_len {
@@ -230,6 +253,15 @@ pub(crate) fn scan_bitsets_scalar_precombined_gated(
         [first, second, third] => {
             scan_bitsets_three_gated(first, second, third, max_len, gate, on_hit)
         }
+        [first, second, third, fourth] => {
+            scan_bitsets_fixed_gated([*first, *second, *third, *fourth], max_len, gate, on_hit)
+        }
+        [first, second, third, fourth, fifth] => scan_bitsets_fixed_gated(
+            [*first, *second, *third, *fourth, *fifth],
+            max_len,
+            gate,
+            on_hit,
+        ),
         _ => scan_bitsets_many_gated(combo_bitsets, max_len, gate, on_hit),
     }
 }
@@ -288,6 +320,29 @@ fn scan_bitsets_three_gated(
     )
 }
 
+#[inline]
+fn scan_bitsets_fixed_gated<const N: usize>(
+    masks: [&BitsetMask; N],
+    max_len: usize,
+    gate: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    let words_len = common_words_len(&masks, max_len);
+    scan_words_gated(
+        max_len,
+        words_len,
+        gate,
+        |word_index| {
+            let mut combined = u64::MAX;
+            for bitset in masks {
+                combined &= bitset.words[word_index];
+            }
+            combined
+        },
+        on_hit,
+    )
+}
+
 fn scan_bitsets_many_gated(
     combo_bitsets: &[&BitsetMask],
     max_len: usize,
@@ -328,7 +383,8 @@ where
         return 0;
     }
 
-    let words_len = max_len.div_ceil(64).min(words_len);
+    let max_words_len = max_len.div_ceil(64);
+    let words_len = max_words_len.min(words_len);
     let mut scan_total = 0usize;
     let rem = max_len % 64;
     let last_mask = if rem == 0 {
@@ -339,7 +395,7 @@ where
 
     for word_index in 0..words_len {
         let mut combined = combine_word(word_index);
-        if word_index + 1 == words_len {
+        if word_index + 1 == max_words_len {
             combined &= last_mask;
         }
         scan_total += combined.count_ones() as usize;
@@ -379,14 +435,14 @@ unsafe fn scan_bitsets_neon_dyn(
         return 0;
     }
 
-    let words_len = combo_bitsets[0].words.len();
+    let words_len = common_words_len(combo_bitsets, max_len);
     let mut total = 0usize;
 
     let mut word_index = 0usize;
     while word_index + 1 < words_len {
         // SAFETY: aarch64 NEON intrinsics are only compiled for aarch64 with
-        // `simd-eval`; `word_index + 1 < words_len` guarantees two u64 lanes
-        // are available for every bitset loaded in this loop.
+        // `simd-eval`. `words_len` is capped to the shortest mask, and the
+        // loop condition guarantees both loaded u64 lanes exist.
         let mut combined = unsafe { vdupq_n_u64(u64::MAX) };
 
         for bitset in combo_bitsets {
@@ -460,7 +516,8 @@ unsafe fn scan_bitsets_neon_dyn_gated(
         return 0;
     }
 
-    let words_len = max_len.div_ceil(64).min(combo_bitsets[0].words.len());
+    let max_words_len = max_len.div_ceil(64);
+    let words_len = common_words_len(combo_bitsets, max_len);
     let mut scan_total = 0usize;
     let rem = max_len % 64;
     let last_mask = if rem == 0 {
@@ -472,8 +529,8 @@ unsafe fn scan_bitsets_neon_dyn_gated(
     let mut word_index = 0usize;
     while word_index + 1 < words_len {
         // SAFETY: aarch64 NEON intrinsics are only compiled for aarch64 with
-        // `simd-eval`; `word_index + 1 < words_len` guarantees two u64 lanes
-        // are available for every bitset loaded in this loop.
+        // `simd-eval`. `words_len` is capped to the shortest mask, and the
+        // loop condition guarantees both loaded u64 lanes exist.
         let mut combined = unsafe { vdupq_n_u64(u64::MAX) };
 
         for bitset in combo_bitsets {
@@ -484,7 +541,7 @@ unsafe fn scan_bitsets_neon_dyn_gated(
 
         let lane0 = unsafe { vgetq_lane_u64(combined, 0) };
         let mut lane1 = unsafe { vgetq_lane_u64(combined, 1) };
-        if word_index + 1 + 1 == words_len {
+        if word_index + 2 == max_words_len {
             lane1 &= last_mask;
         }
 
@@ -538,7 +595,7 @@ unsafe fn scan_bitsets_neon_dyn_gated(
         for bitset in combo_bitsets {
             combined &= bitset.words[word_index];
         }
-        if word_index + 1 == words_len {
+        if word_index + 1 == max_words_len {
             combined &= last_mask;
         }
         scan_total += combined.count_ones() as usize;
@@ -557,6 +614,119 @@ unsafe fn scan_bitsets_neon_dyn_gated(
             } else {
                 gated = 0;
             }
+        }
+
+        let mut w = gated;
+        while w != 0 {
+            let tz = w.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w &= w - 1;
+            on_hit(idx);
+        }
+        word_index += 1;
+    }
+
+    scan_total
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "simd-eval"))]
+unsafe fn scan_bitsets_neon_fixed_gated<const N: usize>(
+    combo_bitsets: [&BitsetMask; N],
+    max_len: usize,
+    gate_eligible: Option<&BitsetMask>,
+    gate_finite: Option<&BitsetMask>,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    if N == 0 || max_len == 0 {
+        return 0;
+    }
+
+    let max_words_len = max_len.div_ceil(64);
+    let words_len = common_words_len(&combo_bitsets, max_len);
+    let mut scan_total = 0usize;
+    let rem = max_len % 64;
+    let last_mask = if rem == 0 {
+        u64::MAX
+    } else {
+        (1u64 << rem) - 1
+    };
+
+    let mut word_index = 0usize;
+    while word_index + 1 < words_len {
+        // SAFETY: this function only compiles for aarch64 with `simd-eval`.
+        // `words_len` is capped to the shortest mask, and the loop condition
+        // guarantees both loaded u64 lanes exist.
+        let mut combined = unsafe { vdupq_n_u64(u64::MAX) };
+
+        for bitset in combo_bitsets {
+            let ptr = unsafe { bitset.words.as_ptr().add(word_index) };
+            let vec = unsafe { vld1q_u64(ptr) };
+            combined = unsafe { vandq_u64(combined, vec) };
+        }
+
+        let lane0 = unsafe { vgetq_lane_u64(combined, 0) };
+        let mut lane1 = unsafe { vgetq_lane_u64(combined, 1) };
+        if word_index + 2 == max_words_len {
+            lane1 &= last_mask;
+        }
+
+        scan_total += lane0.count_ones() as usize;
+        scan_total += lane1.count_ones() as usize;
+        if (lane0 | lane1) == 0 {
+            word_index += 2;
+            continue;
+        }
+
+        let mut gated0 = lane0;
+        let mut gated1 = lane1;
+        if let Some(gate) = gate_eligible {
+            gated0 &= gate_word_allow_out_of_bounds_true(gate, word_index);
+            gated1 &= gate_word_allow_out_of_bounds_true(gate, word_index + 1);
+        }
+        if let Some(gate) = gate_finite {
+            gated0 &= gate.words.get(word_index).copied().unwrap_or(0);
+            gated1 &= gate.words.get(word_index + 1).copied().unwrap_or(0);
+        }
+
+        let mut w0 = gated0;
+        while w0 != 0 {
+            let tz = w0.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w0 &= w0 - 1;
+            on_hit(idx);
+        }
+
+        let mut w1 = gated1;
+        while w1 != 0 {
+            let tz = w1.trailing_zeros() as usize;
+            let idx = (word_index + 1) * 64 + tz;
+            w1 &= w1 - 1;
+            on_hit(idx);
+        }
+
+        word_index += 2;
+    }
+
+    while word_index < words_len {
+        let mut combined = u64::MAX;
+        for bitset in combo_bitsets {
+            combined &= bitset.words[word_index];
+        }
+        if word_index + 1 == max_words_len {
+            combined &= last_mask;
+        }
+        scan_total += combined.count_ones() as usize;
+        if combined == 0 {
+            word_index += 1;
+            continue;
+        }
+
+        let mut gated = combined;
+        if let Some(gate) = gate_eligible {
+            gated &= gate_word_allow_out_of_bounds_true(gate, word_index);
+        }
+        if let Some(gate) = gate_finite {
+            gated &= gate.words.get(word_index).copied().unwrap_or(0);
         }
 
         let mut w = gated;
@@ -611,7 +781,46 @@ pub(crate) fn scan_bitsets_simd_dyn_gated(
     on_hit: &mut dyn FnMut(usize),
 ) -> usize {
     unsafe {
-        scan_bitsets_neon_dyn_gated(combo_bitsets, max_len, gate_eligible, gate_finite, on_hit)
+        match combo_bitsets {
+            [one] => {
+                scan_bitsets_neon_fixed_gated([*one], max_len, gate_eligible, gate_finite, on_hit)
+            }
+            [one, two] => scan_bitsets_neon_fixed_gated(
+                [*one, *two],
+                max_len,
+                gate_eligible,
+                gate_finite,
+                on_hit,
+            ),
+            [one, two, three] => scan_bitsets_neon_fixed_gated(
+                [*one, *two, *three],
+                max_len,
+                gate_eligible,
+                gate_finite,
+                on_hit,
+            ),
+            [one, two, three, four] => scan_bitsets_neon_fixed_gated(
+                [*one, *two, *three, *four],
+                max_len,
+                gate_eligible,
+                gate_finite,
+                on_hit,
+            ),
+            [one, two, three, four, five] => scan_bitsets_neon_fixed_gated(
+                [*one, *two, *three, *four, *five],
+                max_len,
+                gate_eligible,
+                gate_finite,
+                on_hit,
+            ),
+            _ => scan_bitsets_neon_dyn_gated(
+                combo_bitsets,
+                max_len,
+                gate_eligible,
+                gate_finite,
+                on_hit,
+            ),
+        }
     }
 }
 
@@ -702,10 +911,12 @@ mod tests {
         let first = BitsetMask::from_bools(&[true, true, false, true, true, false, true]);
         let second = BitsetMask::from_bools(&[true, false, true, true, false, true, true]);
         let third = BitsetMask::from_bools(&[false, true, true, true, true, false, true]);
+        let fourth = BitsetMask::from_bools(&[true, true, false, true, false, false, true]);
+        let fifth = BitsetMask::from_bools(&[true, true, true, false, true, true, true]);
         let gate = BitsetMask::from_bools(&[true, true, true, false, true, true, false]);
-        let masks = [&first, &second, &third];
+        let masks = [&first, &second, &third, &fourth, &fifth];
 
-        for depth in 1..=3 {
+        for depth in 1..=5 {
             let selected = &masks[..depth];
 
             let mut specialized_hits = Vec::new();
@@ -722,5 +933,45 @@ mod tests {
             assert_eq!(specialized_total, generic_total, "depth {depth}");
             assert_eq!(specialized_hits, generic_hits, "depth {depth}");
         }
+    }
+
+    #[test]
+    fn gated_scans_do_not_mask_shorter_inputs_with_longer_max_len() {
+        let mut short_values = vec![false; 64];
+        short_values[0] = true;
+        short_values[63] = true;
+        let short = BitsetMask::from_bools(&short_values);
+
+        let mut long_values = vec![false; 130];
+        long_values[0] = true;
+        long_values[63] = true;
+        long_values[64] = true;
+        long_values[100] = true;
+        let long = BitsetMask::from_bools(&long_values);
+
+        let mut hits = Vec::new();
+        let total = scan_bitsets_scalar_precombined_gated(
+            &[&short, &long, &long, &long],
+            130,
+            None,
+            &mut |idx| hits.push(idx),
+        );
+
+        assert_eq!(total, 2);
+        assert_eq!(hits, vec![0, 63]);
+    }
+
+    #[test]
+    fn support_sort_orders_sparse_masks_first() {
+        let sparse = BitsetMask::from_bools(&[true, false, false, false]);
+        let dense = BitsetMask::from_bools(&[true, true, true, false]);
+        let middle = BitsetMask::from_bools(&[true, true, false, false]);
+        let mut masks = vec![&dense, &sparse, &middle];
+
+        sort_bitsets_by_support(masks.as_mut_slice());
+
+        assert_eq!(masks[0].support, 1);
+        assert_eq!(masks[1].support, 2);
+        assert_eq!(masks[2].support, 3);
     }
 }

@@ -334,7 +334,7 @@ scripts/performance_gate.sh
 Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to make the
 gate compare against a same-machine baseline with
 `barsmith_bench compare --fail-on-regression`.
-The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For comb-specific refactors, run `--suite comb-eval` directly before validating a larger local CLI profile.
+The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For max-depth-5 refactors, also run `--suite comb-depth5`. For ATR target-generation refactors, build the benchmark runner with `--features target-generation` and run `--suite target-generation` before validating a larger local CLI profile.
 
 Performance depends heavily on:
 - feature catalog size and depth

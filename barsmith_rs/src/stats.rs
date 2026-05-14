@@ -8,7 +8,9 @@ use serde::Serialize;
 use smallvec::SmallVec;
 
 pub use crate::bitset::BitsetCatalog;
-use crate::bitset::{BitsetMask, scan_bitsets_scalar_dyn_gated, scan_bitsets_simd_dyn_gated};
+use crate::bitset::{
+    BitsetMask, scan_bitsets_scalar_dyn_gated, scan_bitsets_simd_dyn_gated, sort_bitsets_by_support,
+};
 use crate::combinator::Combination;
 use crate::config::{
     Config, Direction, EvalProfileMode, PositionSizingMode, StackingMode, StatsDetail,
@@ -617,9 +619,8 @@ pub fn evaluate_combination(
         combo_bitsets.push(mask);
     }
 
-    // Reorder bitsets by ascending support (sparsest first) so that
-    // intersections clear bits sooner and later ANDs become cheaper.
-    combo_bitsets.sort_by_key(|m| m.support);
+    // Sparse masks first make intersections cheaper in the hot path.
+    sort_bitsets_by_support(combo_bitsets.as_mut_slice());
 
     Ok(evaluate_for_bitsets(
         depth,
@@ -644,8 +645,7 @@ pub fn evaluate_combination_indices(
         combo_bitsets.push(mask);
     }
 
-    // Reorder bitsets by ascending support to reduce intersection cost.
-    combo_bitsets.sort_by_key(|m| m.support);
+    sort_bitsets_by_support(combo_bitsets.as_mut_slice());
 
     Ok(evaluate_for_bitsets(
         depth,
@@ -726,7 +726,7 @@ pub fn evaluate_combination_indices_profiled(
             .ok_or_else(|| anyhow!("Missing bitset for feature index {idx}"))?;
         combo_bitsets.push(mask);
     }
-    combo_bitsets.sort_by_key(|m| m.support);
+    sort_bitsets_by_support(combo_bitsets.as_mut_slice());
     let build_ns = build_start.elapsed().as_nanos() as u64;
 
     let (stat, mut profile) =

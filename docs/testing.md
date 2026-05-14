@@ -96,7 +96,21 @@ BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 
-The `smoke` benchmark suite covers the main stable hot paths: combination rank/unrank, index iteration, synthetic combination evaluation, gated bitset scans, and core stats. For combination-search performance work, run `--suite comb-eval` directly and then confirm with a Tier C CLI profile on local data.
+The `smoke` benchmark suite covers the main stable hot paths: combination rank/unrank, index iteration, synthetic combination evaluation, gated bitset scans, and core stats. For combination-search performance work, run `--suite comb-eval` directly. For max-depth-5 work, also run `--suite comb-depth5`. For ATR/high-low target work, run `--suite target-generation`. Confirm large search changes with a Tier C CLI profile on local data.
+
+Example targeted benchmark runs:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite comb-depth5 \
+  --samples 21 \
+  --out target/barsmith-bench/comb-depth5-current.json
+
+cargo run --release -p barsmith_bench --features target-generation -- run \
+  --suite target-generation \
+  --samples 21 \
+  --out target/barsmith-bench/target-generation-current.json
+```
 
 ## Fixture tiers
 

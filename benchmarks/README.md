@@ -36,6 +36,11 @@ The `smoke` suite is the normal pre-push performance gate. It includes:
 - `bitset`: gated bitset scanning.
 - `stats`: core metric accumulation through the shared evaluator.
 
+Additional targeted suites are available for performance-sensitive areas that are not part of the default smoke baseline:
+
+- `comb-depth5`: starts the synthetic evaluator at depth 5 so max-depth-5 searches are measured directly.
+- `target-generation`: measures `2x_atr_tp_atr_stop` ATR target construction on synthetic OHLCV/ATR data. Build with `--features target-generation` when running this suite.
+
 Run the broader local suite:
 
 ```bash
@@ -70,6 +75,24 @@ target/release/barsmith_bench run \
   --suite comb-eval \
   --samples 21 \
   --out target/barsmith-bench/comb-eval-current.json
+```
+
+For max-depth-5 refactors, run the dedicated depth-5 suite:
+
+```bash
+target/release/barsmith_bench run \
+  --suite comb-depth5 \
+  --samples 21 \
+  --out target/barsmith-bench/comb-depth5-current.json
+```
+
+For target-generation refactors, run:
+
+```bash
+cargo run --release -p barsmith_bench --features target-generation -- run \
+  --suite target-generation \
+  --samples 21 \
+  --out target/barsmith-bench/target-generation-current.json
 ```
 
 Use Tier C CLI runs to validate the full pipeline after the hard gate passes. CLI runs include feature engineering and result ingestion, so they are useful for release confidence but less stable as a regression gate.

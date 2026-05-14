@@ -27,6 +27,8 @@ Use this checklist for behavior-sensitive Barsmith changes.
 - `scripts/performance_gate.sh` passes and writes a structured hard-gate `barsmith_bench` report.
 - `scripts/benchmark_smoke.sh` passes as a review-only CLI sanity check when CLI/runtime wiring changed.
 - Stable microbenchmark comparison passes, or the regression has an explicit accepted tradeoff.
+- Max-depth-5 combination-search changes include a `comb-depth5` benchmark comparison.
+- ATR/high-low target changes include a `target-generation` benchmark comparison and parity tests for gap opens, same-bar TP/SL touches, cutoff exits, NaNs, tick rounding, long, short, and both-direction runs.
 - Larger Tier C benchmarks are recorded for hot-path refactors.
 - Cargo profile/build-flag changes include profile-audit evidence and state whether the binary is native-optimized or portable.
 - SIMD/unsafe changes are isolated, documented with safety comments, and covered by scalar parity tests where practical.

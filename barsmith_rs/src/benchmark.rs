@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
-use crate::bitset::{BitsetMask, scan_bitsets_simd_dyn_gated};
-use crate::combinator::SeekableIndexIterator;
+use crate::bitset::{BitsetMask, scan_bitsets_simd_dyn_gated, sort_bitsets_by_support};
+use crate::combinator::{SeekableIndexIterator, total_combinations};
 
 /// Small benchmark hooks for the standalone Barsmith benchmark binary.
 ///
@@ -48,7 +48,12 @@ impl BenchmarkCombSearch {
     }
 
     pub fn scan_checksum(&self, combinations: usize) -> usize {
-        let mut iter = SeekableIndexIterator::starting_at(self.feature_count, self.max_depth, 0);
+        self.scan_checksum_from(0, combinations)
+    }
+
+    pub fn scan_checksum_from(&self, start_offset: u128, combinations: usize) -> usize {
+        let mut iter =
+            SeekableIndexIterator::starting_at(self.feature_count, self.max_depth, start_offset);
         let mut checksum = 0usize;
         let mut observed = 0usize;
 
@@ -58,7 +63,7 @@ impl BenchmarkCombSearch {
             };
             let mut masks: smallvec::SmallVec<[&BitsetMask; 8]> =
                 indices.iter().map(|&idx| &self.bitsets[idx]).collect();
-            masks.sort_by_key(|mask| mask.support);
+            sort_bitsets_by_support(masks.as_mut_slice());
 
             let Some(first) = masks.first() else {
                 continue;
@@ -83,6 +88,13 @@ impl BenchmarkCombSearch {
         }
 
         black_box(checksum ^ observed)
+    }
+
+    pub fn depth_start_offset(&self, depth: usize) -> u128 {
+        if depth == 0 {
+            return 0;
+        }
+        total_combinations(self.feature_count, depth.saturating_sub(1))
     }
 }
 

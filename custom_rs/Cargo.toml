@@ -9,6 +9,9 @@ readme = "../README.md"
 rust-version = "1.85.1"
 publish = false
 
+[features]
+bench-api = []
+
 [dependencies]
 barsmith_rs = { path = "../barsmith_rs" }
 anyhow = "1.0.102"

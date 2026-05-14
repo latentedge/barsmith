@@ -7,7 +7,9 @@ use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use polars::prelude::*;
 use serde::Serialize;
 
-use crate::bitset::{BitsetCatalog, BitsetMask, scan_bitsets_scalar_dyn_gated};
+use crate::bitset::{
+    BitsetCatalog, BitsetMask, scan_bitsets_scalar_dyn_gated, sort_bitsets_by_support,
+};
 use crate::combinator::IndexCombination;
 use crate::config::{
     Config, Direction, EvalProfileMode, PositionSizingMode, ReportMetricsMode, StackingMode,
@@ -1757,7 +1759,7 @@ fn selected_trade_indices(
                 .ok_or_else(|| anyhow!("missing formula bitset index {idx}"))?,
         );
     }
-    combo_bitsets.sort_by_key(|mask| mask.support);
+    sort_bitsets_by_support(combo_bitsets.as_mut_slice());
 
     let rewards = ctx.rewards();
     let eligible = ctx.eligible();
