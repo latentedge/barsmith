@@ -16,6 +16,8 @@ use barsmith_rs::selection::SelectionMode;
 
 const DEFAULT_CAPITAL_DOLLAR: f64 = 100_000.0;
 const DEFAULT_RISK_PCT_PER_TRADE: f64 = 1.0;
+pub const DEFAULT_RUNS_ROOT: &str = "runs/artifacts";
+pub const DEFAULT_REGISTRY_DIR: &str = "runs/registry";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -170,23 +172,16 @@ pub struct EvalFormulasArgs {
     #[arg(long = "report-top", default_value_t = 50)]
     pub report_top: usize,
 
-    /// Explicit forward-test run folder.
-    ///
-    /// Use this for a specific output path. For the canonical
-    /// forward-test/target/dataset/cutoff/run-id layout, use --runs-root.
-    #[arg(
-        long = "output-dir",
-        value_hint = clap::ValueHint::DirPath,
-        conflicts_with = "runs_root"
-    )]
-    pub output_dir: Option<PathBuf>,
-
     /// Root directory for standardized forward-test run folders.
     ///
-    /// The effective output directory becomes
+    /// The effective run folder becomes
     /// `<runs-root>/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/`.
-    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath)]
-    pub runs_root: Option<PathBuf>,
+    #[arg(
+        long = "runs-root",
+        value_hint = clap::ValueHint::DirPath,
+        default_value = DEFAULT_RUNS_ROOT
+    )]
+    pub runs_root: PathBuf,
 
     /// Dataset identifier used in standardized output paths.
     ///
@@ -204,9 +199,13 @@ pub struct EvalFormulasArgs {
     #[arg(long = "run-slug")]
     pub run_slug: Option<String>,
 
-    /// Optional directory for lightweight Git-trackable run registry records.
-    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath)]
-    pub registry_dir: Option<PathBuf>,
+    /// Directory for lightweight Git-trackable run registry records.
+    #[arg(
+        long = "registry-dir",
+        value_hint = clap::ValueHint::DirPath,
+        default_value = DEFAULT_REGISTRY_DIR
+    )]
+    pub registry_dir: PathBuf,
 
     /// Durable artifact URI for the full run folder, recorded in registry metadata.
     #[arg(long = "artifact-uri")]
@@ -218,7 +217,7 @@ pub struct EvalFormulasArgs {
     #[arg(long = "checksum-artifacts", default_value_t = false)]
     pub checksum_artifacts: bool,
 
-    /// Disable writing barsmith.log into the output directory. When set,
+    /// Disable writing barsmith.log into the run folder. When set,
     /// logs are only emitted to stdout/stderr.
     #[arg(long = "no-file-log", default_value_t = false)]
     pub no_file_log: bool,
@@ -506,7 +505,7 @@ pub struct EvalFormulasArgs {
 
 #[derive(Parser, Debug)]
 pub struct ResultsArgs {
-    /// Barsmith output directory containing cumulative.duckdb and results_parquet/
+    /// Barsmith run folder containing cumulative.duckdb and results_parquet/
     #[arg(long = "output-dir", value_hint = clap::ValueHint::DirPath)]
     pub output_dir: PathBuf,
 
@@ -574,24 +573,16 @@ pub struct CombArgs {
     #[arg(long = "engine", value_enum, default_value = "auto")]
     pub engine: EngineValue,
 
-    /// Output directory for cumulative artefacts.
-    ///
-    /// Use this for explicit legacy-compatible paths. For the canonical
-    /// comb/target/direction/dataset/run-id layout, use --runs-root instead.
-    #[arg(
-        long = "output-dir",
-        value_hint = clap::ValueHint::DirPath,
-        conflicts_with = "runs_root",
-        required_unless_present = "runs_root"
-    )]
-    pub output_dir: Option<PathBuf>,
-
     /// Root directory for standardized run folders.
     ///
-    /// The effective output directory becomes
+    /// The effective run folder becomes
     /// `<runs-root>/comb/<target>/<direction>/<dataset-id>/<run-id>/`.
-    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath)]
-    pub runs_root: Option<PathBuf>,
+    #[arg(
+        long = "runs-root",
+        value_hint = clap::ValueHint::DirPath,
+        default_value = DEFAULT_RUNS_ROOT
+    )]
+    pub runs_root: PathBuf,
 
     /// Dataset identifier used in standardized output paths.
     ///
@@ -609,9 +600,13 @@ pub struct CombArgs {
     #[arg(long = "run-slug")]
     pub run_slug: Option<String>,
 
-    /// Optional directory for lightweight Git-trackable run registry records.
-    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath)]
-    pub registry_dir: Option<PathBuf>,
+    /// Directory for lightweight Git-trackable run registry records.
+    #[arg(
+        long = "registry-dir",
+        value_hint = clap::ValueHint::DirPath,
+        default_value = DEFAULT_REGISTRY_DIR
+    )]
+    pub registry_dir: PathBuf,
 
     /// Durable artifact URI for the full run folder, recorded in registry metadata.
     #[arg(long = "artifact-uri")]
@@ -704,7 +699,7 @@ pub struct CombArgs {
     pub force: bool,
 
     /// Acknowledge that a newly engineered dataset differs from an existing
-    /// barsmith_prepared.csv in the output directory; overwrite and continue.
+    /// barsmith_prepared.csv in the run folder; overwrite and continue.
     #[arg(long = "ack-new-df", default_value_t = false)]
     pub ack_new_df: bool,
 
@@ -735,7 +730,7 @@ pub struct CombArgs {
     #[arg(long = "min-calmar-report")]
     pub min_calmar_report: Option<f64>,
 
-    /// Disable writing barsmith.log into the output directory. When set,
+    /// Disable writing barsmith.log into the run folder. When set,
     /// logs are only emitted to stdout/stderr.
     #[arg(long = "no-file-log", default_value_t = false)]
     pub no_file_log: bool,
@@ -851,7 +846,7 @@ impl Cli {
 }
 
 impl CombArgs {
-    pub fn into_config(self) -> Result<Config> {
+    pub fn into_config(self, output_dir: PathBuf) -> Result<Config> {
         let include_date_start = parse_optional_date(self.date_start.as_deref())?;
         let include_date_end = parse_optional_date(self.date_end.as_deref())?;
         let direction = self.direction.to_direction();
@@ -990,9 +985,7 @@ impl CombArgs {
             source_csv: Some(self.csv_path),
             direction,
             target,
-            output_dir: self
-                .output_dir
-                .ok_or_else(|| anyhow::anyhow!("missing effective output directory"))?,
+            output_dir,
             max_depth: self.max_depth,
             min_sample_size,
             min_sample_size_report,
@@ -1367,12 +1360,11 @@ mod tests {
             direction: DirectionValue::Long,
             target: "next_bar_color_and_wicks".to_string(),
             engine: EngineValue::Auto,
-            output_dir: Some(PathBuf::from("out")),
-            runs_root: None,
+            runs_root: PathBuf::from(DEFAULT_RUNS_ROOT),
             dataset_id: None,
             run_id: None,
             run_slug: None,
-            registry_dir: None,
+            registry_dir: PathBuf::from(DEFAULT_REGISTRY_DIR),
             artifact_uri: None,
             checksum_artifacts: false,
             s3_output: None,
@@ -1424,21 +1416,46 @@ mod tests {
     #[test]
     fn removed_logic_flags_are_rejected() {
         for flag in ["--logic", "--logic-mode", "--early-exit-when-reused"] {
-            let err = Cli::try_parse_from([
-                "barsmith",
-                "comb",
-                "--csv",
-                "dummy.csv",
-                "--output-dir",
-                "out",
-                flag,
-                "or",
-            ])
-            .expect_err("removed logic flag should not parse");
+            let err = Cli::try_parse_from(["barsmith", "comb", "--csv", "dummy.csv", flag, "or"])
+                .expect_err("removed logic flag should not parse");
 
             assert!(
                 matches!(err.kind(), clap::error::ErrorKind::UnknownArgument),
                 "expected {flag} to be rejected as an unknown argument, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn run_producing_output_dir_flags_are_rejected() {
+        for command in ["comb", "eval-formulas"] {
+            let args = if command == "comb" {
+                vec![
+                    "barsmith",
+                    command,
+                    "--csv",
+                    "dummy.csv",
+                    "--output-dir",
+                    "out",
+                ]
+            } else {
+                vec![
+                    "barsmith",
+                    command,
+                    "--prepared",
+                    "prepared.csv",
+                    "--formulas",
+                    "formulas.txt",
+                    "--output-dir",
+                    "out",
+                ]
+            };
+            let err =
+                Cli::try_parse_from(args).expect_err("run-producing --output-dir should not parse");
+
+            assert!(
+                matches!(err.kind(), clap::error::ErrorKind::UnknownArgument),
+                "expected {command} --output-dir to be rejected, got {err:?}"
             );
         }
     }
@@ -1470,7 +1487,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Full;
         args.top_k = 0;
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Full),
             "report_metrics should be Full for full report mode"
@@ -1486,7 +1503,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Formula;
         args.top_k = 0;
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::FormulasOnly),
             "report_metrics should be FormulasOnly for formula report mode"
@@ -1502,7 +1519,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Top10;
         args.top_k = 5; // default
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Full),
             "report_metrics should be Full for top10 preset"
@@ -1518,7 +1535,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Top10;
         args.top_k = 3;
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Full),
             "report_metrics should be Full for top10 preset"
@@ -1534,7 +1551,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Top100;
         args.top_k = 5; // default
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Full),
             "report_metrics should be Full for top100 preset"
@@ -1550,7 +1567,7 @@ mod tests {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Top100;
         args.top_k = 12;
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Full),
             "report_metrics should be Full for top100 preset"
@@ -1565,7 +1582,7 @@ mod tests {
     fn report_off_disables_reporting() {
         let mut args = base_args();
         args.report_metrics = ReportMetricsValue::Off;
-        let config = args.into_config().expect("config");
+        let config = args.into_config(PathBuf::from("out")).expect("config");
         assert!(
             matches!(config.report_metrics, ReportMetricsMode::Off),
             "report_metrics should be Off when reporting is disabled"

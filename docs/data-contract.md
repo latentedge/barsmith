@@ -4,7 +4,7 @@ This document describes the minimum data contract Barsmith expects for `comb` ru
 
 ## Input CSV (raw OHLCV)
 
-The default CLI (`barsmith_cli`) reads a raw OHLCV CSV and writes an engineered dataset into `output-dir/barsmith_prepared.csv`.
+The default CLI (`barsmith_cli`) reads a raw OHLCV CSV and writes an engineered dataset into the standard run folder as `barsmith_prepared.csv`.
 
 Required columns:
 
@@ -20,7 +20,7 @@ Notes:
 
 ## Prepared dataset (engineered)
 
-The core pipeline (`barsmith_rs`) evaluates combinations against a prepared dataset. If you’re using the default CLI, this is generated automatically and stored at `output-dir/barsmith_prepared.csv`.
+The core pipeline (`barsmith_rs`) evaluates combinations against a prepared dataset. If you’re using the default CLI, this is generated automatically and stored at `runs/artifacts/.../barsmith_prepared.csv`.
 
 Required/recognized columns:
 

@@ -19,10 +19,8 @@ barsmith_cli comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --runs-root runs/artifacts \
   --dataset-id tiny_sample \
   --run-id quickstart_dry \
-  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -37,10 +35,8 @@ barsmith_cli comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --runs-root runs/artifacts \
   --dataset-id tiny_sample \
   --run-id quickstart_real \
-  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -60,10 +56,8 @@ barsmith_cli eval-formulas \
   --cutoff 2024-12-31 \
   --stacking-mode no-stacking \
   --position-sizing fractional \
-  --runs-root runs/artifacts \
   --dataset-id tiny_sample \
   --run-slug forward_test \
-  --registry-dir runs/registry \
   --plot \
   --plot-mode combined
 ```

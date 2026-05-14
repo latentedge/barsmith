@@ -321,7 +321,7 @@ impl CumulativeStore {
         let results_dir = config.output_dir.join("results_parquet");
         let duckdb_path = config.output_dir.join("cumulative.duckdb");
 
-        // A forced recompute starts this output directory from scratch.
+        // A forced recompute starts this run folder from scratch.
         if config.force_recompute {
             if duckdb_path.exists() {
                 let _ = fs::remove_file(&duckdb_path);
@@ -396,7 +396,7 @@ impl CumulativeStore {
             [],
         )?;
 
-        // One output directory belongs to one input CSV unless recompute is explicit.
+        // One run folder belongs to one input CSV unless recompute is explicit.
         enforce_csv_consistency(&conn, &csv_hash, config.force_recompute)?;
 
         let resume_offset = if config.force_recompute {
@@ -856,13 +856,13 @@ fn enforce_csv_consistency(conn: &Connection, csv_hash: &str, force: bool) -> Re
     }
 
     if force {
-        // Caller opted in to reusing this output directory despite a different CSV.
+        // Caller opted in to reusing this run folder despite a different CSV.
         return Ok(());
     }
 
     Err(anyhow!(
-        "Existing cumulative metadata in this output directory was created from a different CSV. \
-         Run with --force-recompute or choose a fresh --output-dir for this dataset."
+        "Existing cumulative metadata in this run folder was created from a different CSV. \
+         Run with --force-recompute or choose a fresh --run-id for this dataset."
     ))
 }
 

@@ -15,9 +15,9 @@ previously chose the best post-window row should either switch to
 `--selection-mode validation-rank` for diagnostics or adopt the default
 holdout-confirm output and review `reports/selection.md`.
 
-`eval-formulas` now supports the same standard output contract as `comb` through
-`--runs-root`, `--output-dir`, `--dataset-id`, `--run-id`, and `--registry-dir`.
-When a standard run folder is selected, formula CSV/JSON, FRS outputs,
+`eval-formulas` now uses the same standard output contract as `comb` by default.
+Use `--runs-root`, `--dataset-id`, `--run-id`, and `--registry-dir` only when
+you need to override the default roots or run identity. Formula CSV/JSON, FRS outputs,
 equity-curve exports, optional plots, command metadata, manifest, checksums, and
 `reports/summary.md` are written into that folder by default. Explicit
 `--csv-out`, `--json-out`, `--frs-out`, `--frs-windows-out`,
@@ -47,7 +47,7 @@ The `--logic` / `--logic-mode` CLI surface and the internal `LogicMode` config e
 
 ### Run manifest required for resume
 
-Run folders now include `run_manifest.json`. Existing output directories that contain Parquet/DuckDB state but no manifest are rejected unless you pass `--force` or choose a fresh `--output-dir`.
+Run folders now include `run_manifest.json`. Existing run folders that contain Parquet/DuckDB state but no manifest are rejected unless you pass `--force` or choose a fresh `--run-id`.
 
 The manifest binds resume to the CSV fingerprint and resume-sensitive settings such as target, direction, date window, catalog hash, pruning settings, cost model, sizing mode, and required-feature gate. Increasing `--max-depth` is intentionally allowed because deeper runs extend the deterministic enumeration stream.
 

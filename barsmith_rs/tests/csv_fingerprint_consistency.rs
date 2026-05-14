@@ -135,7 +135,7 @@ fn same_csv_allows_reuse_without_force() -> Result<()> {
     let (_store1, resume1) = CumulativeStore::new(&cfg)?;
     assert_eq!(resume1, 0);
 
-    // Re-opening with the same CSV and output directory should succeed and
+    // Re-opening with the same CSV and run folder should succeed and
     // not complain about CSV mismatch.
     let (_store2, resume2) = CumulativeStore::new(&cfg)?;
     assert_eq!(resume2, 0);
@@ -144,7 +144,7 @@ fn same_csv_allows_reuse_without_force() -> Result<()> {
 }
 
 #[test]
-fn different_csv_changes_run_identity_and_requires_force_to_reuse_output_dir() -> Result<()> {
+fn different_csv_changes_run_identity_and_requires_force_to_reuse_run_folder() -> Result<()> {
     let temp_dir = tempdir()?;
     let csv1 = temp_dir.path().join("data1.csv");
     let csv2 = temp_dir.path().join("data2.csv");
@@ -161,15 +161,13 @@ fn different_csv_changes_run_identity_and_requires_force_to_reuse_output_dir() -
     store1.ingest_with_enumerated(&combos, &stats, combos.len(), 0)?;
     store1.flush()?;
 
-    // Using a different CSV against the same output directory without force
+    // Using a different CSV against the same run folder without force
     // should fail because the run manifest binds the directory to the first
     // CSV fingerprint and resume-sensitive config.
     let cfg2 = base_config(&csv2, &output_dir);
     let err = match CumulativeStore::new(&cfg2) {
         Ok(_) => {
-            panic!(
-                "reusing an output directory with a different CSV should error without force_recompute"
-            )
+            panic!("reusing a run folder with a different CSV should error without force_recompute")
         }
         Err(e) => e,
     };
@@ -179,7 +177,7 @@ fn different_csv_changes_run_identity_and_requires_force_to_reuse_output_dir() -
         "error message should mention the run identity mismatch"
     );
 
-    // Enabling force_recompute should allow reuse of the output directory and
+    // Enabling force_recompute should allow reuse of the run folder and
     // reset resume_offset to zero.
     let mut cfg3 = base_config(&csv2, &output_dir);
     cfg3.force_recompute = true;

@@ -16,7 +16,8 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Refactored bitset scanning, stats metrics, batch/subset pruning, and custom target geometry into dedicated modules with focused tests.
 - Added Rust-native ranked formula evaluation with FRS summaries, equity-curve exports, and optional PNG plots.
 - Added a Rust-native `results` command for querying cumulative run folders and removed the legacy external result-query script.
-- Added standardized run-folder construction via `--runs-root`, command metadata files, closeout summaries, optional registry JSON, and `total_return`/`calmar_r` result columns for future audits.
+- Added standardized run-folder construction via `--runs-root`, command metadata files, closeout summaries, registry JSON, and `total_return`/`calmar_r` result columns for future audits.
+- Made standard run folders and registry records the default for `comb` and `eval-formulas`; removed legacy run-producing `--output-dir` flags while keeping `results --output-dir` for querying existing runs.
 - Standardized forward-test outputs so `eval-formulas` can write the same command metadata, manifest, checksums, summary, plots, and Git-safe registry records as combination runs.
 - Added holdout-aware formula selection artifacts (`selection_report.json`, `selection_decisions.csv`, `selected_formulas.txt`, and `reports/selection.md`) with pre-ranked/post-confirmed defaults.
 - Added `results --export-formulas` for feeding stored combination results directly into `eval-formulas`, with metadata comments that call out the discovery/pre-only requirement for holdout-safe research.

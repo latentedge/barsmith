@@ -166,7 +166,7 @@ fn feature_pairs_depth_two_then_one_preserves_results() -> Result<()> {
 }
 
 /// Toggling enable_feature_pairs changes the run identity because it changes
-/// the catalog. Reusing the same output directory without force should fail
+/// the catalog. Reusing the same run folder without force should fail
 /// before existing results are touched.
 #[test]
 fn feature_pairs_toggle_after_zeros_causes_run_identity_mismatch() -> Result<()> {
@@ -194,7 +194,7 @@ fn feature_pairs_toggle_after_zeros_causes_run_identity_mismatch() -> Result<()>
     );
 
     // Run 2: attempt depth 1 with feature-pairs enabled. This produces a
-    // different catalog and must be rejected for this output directory.
+    // different catalog and must be rejected for this run folder.
     let mut cfg2 = base_config(&csv_path, &output_dir);
     cfg2.max_depth = 1;
     cfg2.max_combos = Some(32);
@@ -250,7 +250,7 @@ fn feature_pairs_toggle_causes_run_identity_mismatch_error() -> Result<()> {
     );
 
     // Run 2: depth 2, feature-pairs enabled. This must fail because the
-    // output directory is bound to the no-feature-pairs catalog.
+    // run folder is bound to the no-feature-pairs catalog.
     let mut cfg2 = base_config(&csv_path, &output_dir);
     cfg2.max_depth = 2;
     cfg2.max_combos = Some(32);

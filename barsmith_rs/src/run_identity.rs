@@ -131,7 +131,7 @@ pub(crate) fn validate_or_write_run_manifest(
 
         if existing.schema_version != RUN_MANIFEST_SCHEMA_VERSION {
             return Err(anyhow!(
-                "{} uses unsupported schema_version {}. Run with --force-recompute or choose a fresh --output-dir.",
+                "{} uses unsupported schema_version {}. Run with --force-recompute or choose a fresh --run-id.",
                 manifest_path.display(),
                 existing.schema_version
             ));
@@ -139,7 +139,7 @@ pub(crate) fn validate_or_write_run_manifest(
 
         if existing.run_identity_hash != run_identity_hash {
             return Err(anyhow!(
-                "{} belongs to a different Barsmith run identity. Run with --force-recompute or choose a fresh --output-dir.",
+                "{} belongs to a different Barsmith run identity. Run with --force-recompute or choose a fresh --run-id.",
                 manifest_path.display()
             ));
         }
@@ -153,7 +153,7 @@ pub(crate) fn validate_or_write_run_manifest(
 
     if !force_recompute && has_existing_state {
         return Err(anyhow!(
-            "Existing Barsmith state was found in {} but {} is missing. Run with --force-recompute or choose a fresh --output-dir.",
+            "Existing Barsmith state was found in {} but {} is missing. Run with --force-recompute or choose a fresh --run-id.",
             output_dir.display(),
             RUN_MANIFEST_FILE
         ));

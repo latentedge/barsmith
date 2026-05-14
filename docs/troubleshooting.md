@@ -2,11 +2,11 @@
 
 ## “Prepared dataset already exists … re-run with --ack-new-df”
 
-The default CLI always writes `output-dir/barsmith_prepared.csv`. If it already exists, pass `--ack-new-df` to overwrite it.
+The default CLI always writes `barsmith_prepared.csv` into the resolved run folder. If it already exists, pass `--ack-new-df` to overwrite it.
 
 ## “Different run identity …”
 
-Barsmith writes `run_manifest.json` and prevents accidentally reusing an output directory with a different dataset, target, direction, catalog, date window, pruning mode, cost/sizing mode, or other resume-sensitive setting. Use `--force` to explicitly clear/overwrite cumulative outputs, or choose a fresh `--output-dir`.
+Barsmith writes `run_manifest.json` and prevents accidentally reusing a run folder with a different dataset, target, direction, catalog, date window, pruning mode, cost/sizing mode, or other resume-sensitive setting. Use `--force` to explicitly clear/overwrite cumulative outputs, or choose a fresh `--run-id`.
 
 ## “Missing required '<target>_exit_i' column for --stacking-mode no-stacking”
 

@@ -22,7 +22,14 @@ fn cli_dry_run_prepares_dataset() {
     );
 
     let temp_dir = tempdir().expect("tempdir");
-    let output_dir = temp_dir.path().join("parity_es_check");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let output_dir = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("parity_es")
+        .join("parity_es_check");
     let cli_status = Command::new("cargo")
         .args([
             "run",
@@ -38,8 +45,14 @@ fn cli_dry_run_prepares_dataset() {
             "next_bar_color_and_wicks",
             "--position-sizing",
             "fractional",
-            "--output-dir",
-            output_dir.to_str().expect("output dir"),
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry dir"),
+            "--dataset-id",
+            "parity_es",
+            "--run-id",
+            "parity_es_check",
             "--max-depth",
             "3",
             "--min-samples",

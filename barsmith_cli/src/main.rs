@@ -204,10 +204,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Comb(mut args) => {
+        Commands::Comb(args) => {
             let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
             let output_plan = standard_output::resolve_comb_output(&args, &argv)?;
-            args.output_dir = Some(output_plan.output_dir.clone());
             let log_file = if args.no_file_log {
                 None
             } else {
@@ -219,7 +218,7 @@ fn main() -> Result<()> {
 
             let ack_new_df = args.ack_new_df;
             let requested_engine = args.engine;
-            let config = args.into_config()?;
+            let config = args.into_config(output_plan.output_dir.clone())?;
             let engine = resolve_comb_engine(requested_engine, &config.target);
             tracing::info!(target = %config.target, requested_engine = ?requested_engine, engine = ?engine, "resolved comb engine");
             let run_result = match engine {
@@ -248,26 +247,20 @@ fn main() -> Result<()> {
         Commands::EvalFormulas(mut args) => {
             let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
             let output_plan = standard_output::resolve_forward_output(&args, &argv)?;
-            if let Some(plan) = output_plan.as_ref() {
-                standard_output::apply_forward_output_defaults(&mut args, plan);
-            }
-            let log_file = output_plan.as_ref().and_then(|plan| {
-                if args.no_file_log {
-                    None
-                } else {
-                    Some(plan.output_dir.join("barsmith.log"))
-                }
-            });
+            standard_output::apply_forward_output_defaults(&mut args, &output_plan);
+            let log_file = if args.no_file_log {
+                None
+            } else {
+                Some(output_plan.output_dir.join("barsmith.log"))
+            };
             init_tracing(log_file.clone())?;
             log_invocation(log_file.as_ref());
-            if let Some(plan) = output_plan.as_ref() {
-                standard_output::write_start_files(plan)?;
-            }
+            standard_output::write_start_files(&output_plan)?;
 
             let run_result = eval_formulas::run(&args);
-            if let (Some(plan), Ok(result)) = (output_plan.as_ref(), run_result.as_ref()) {
+            if let Ok(result) = run_result.as_ref() {
                 standard_output::write_forward_closeout_files(
-                    plan,
+                    &output_plan,
                     &args,
                     &result.report,
                     &result.written_files,

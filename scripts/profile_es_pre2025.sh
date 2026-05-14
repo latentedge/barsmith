@@ -17,16 +17,20 @@ run_case () {
   local direction="$1"
   local depth="$2"
   local label="${direction}_d${depth}"
-  local out_dir="$OUT_BASE/$label"
+  local runs_root="$OUT_BASE/artifacts"
+  local registry_dir="$OUT_BASE/registry"
 
   echo
-  echo "== Running Barsmith: direction=${direction}, max-depth=${depth}, out=${out_dir} =="
+  echo "== Running Barsmith: direction=${direction}, max-depth=${depth}, run-id=${label} =="
   time cargo run -p barsmith_cli -- \
     comb \
     --csv "$DATA" \
     --direction "$direction" \
     --target next_bar_color_and_wicks \
-    --output-dir "$out_dir" \
+    --runs-root "$runs_root" \
+    --registry-dir "$registry_dir" \
+    --dataset-id es_30m_pre2025 \
+    --run-id "$label" \
     --max-depth "$depth" \
     --min-sample-size 500 \
     --date-start 2024-01-01 \

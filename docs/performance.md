@@ -62,6 +62,7 @@ cargo run --release -p barsmith_cli -- comb \
   --direction long \
   --target 2x_atr_tp_atr_stop \
   --runs-root target/barsmith-profile/candidate \
+  --registry-dir target/barsmith-profile/registry \
   --dataset-id local-tier-c \
   --run-id comb_profile \
   --max-depth 3 \

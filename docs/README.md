@@ -8,7 +8,7 @@ Barsmith is currently marked **unstable**. Expect breaking changes.
 - `docs/data-contract.md` — raw CSV + prepared dataset contract
 - `docs/cli.md` — CLI flags and practical guidance for `comb`, `eval-formulas`, and `results`
 - `docs/research-protocol.md` — pre/post selection protocol, holdout confirmation, and overfit controls
-- `docs/runs.md` — running long experiments (resume, output dirs, batching)
+- `docs/runs.md` — running long experiments (resume, standard run folders, batching)
 - `docs/outputs.md` — what gets written + how to query results (DuckDB/Parquet)
 - `docs/architecture.md` — crate layout + the `comb` pipeline at a high level
 - `docs/engines.md` — builtin engine vs custom engines / prepared datasets

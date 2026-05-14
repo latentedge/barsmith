@@ -36,7 +36,6 @@ barsmith_cli comb \
   --csv ../es_30m.csv \
   --target 2x_atr_tp_atr_stop \
   --engine auto \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2
 ```
 

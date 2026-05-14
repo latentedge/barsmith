@@ -4,10 +4,10 @@ Barsmith writes incremental Parquet batches plus a DuckDB catalog for querying â
 
 ## Files
 
-In `--output-dir`:
+In each standard run folder:
 
 - `barsmith_prepared.csv`: engineered dataset used for the run
-- `run_manifest.json`: resume identity for the output directory
+- `run_manifest.json`: resume identity for the run folder
 - `command.txt`: shell-quoted command used to launch the run
 - `command.json`: structured command metadata, run ID, dataset ID, Git SHA, and artifact URI
 - `results_parquet/part-*.parquet`: stored result rows (only combinations that pass storage filters)
@@ -16,11 +16,11 @@ In `--output-dir`:
 - `checksums.sha256`: checksums for small audit metadata; pass `--checksum-artifacts` to include heavy run files
 - `reports/summary.md`: human-readable closeout summary for the run
 
-For standardized combination-search folders, prefer `--runs-root` instead of a
-hand-built `--output-dir`:
+Combination search writes under `runs/artifacts` by default. Pass `--runs-root`
+only when you want a different artifact root:
 
 ```text
-<runs-root>/
+runs/artifacts/
   comb/
     <target>/
       <direction>/
@@ -38,18 +38,18 @@ hand-built `--output-dir`:
               summary.md
 ```
 
-Use `--registry-dir runs/registry` to write a lightweight Git-trackable registry
-record at `comb/<target>/<direction>/<dataset-id>/<run-id>.json`. Registry
-records include IDs, Git SHA, command hash, portable run path, artifact URI, and
-best-Calmar and best-total-R metrics. They store a formula hash rather than
-formula text so private formulas do not need to be committed.
+Barsmith also writes a lightweight Git-trackable registry record under
+`runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json` by default.
+Registry records include IDs, Git SHA, command hash, portable run path, artifact
+URI, and best-Calmar and best-total-R metrics. They store a formula hash rather
+than formula text so private formulas do not need to be committed.
 Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
 `NaN` rather than being silently converted to JSON `null`.
 
-`eval-formulas` can also use the standard run-folder contract:
+`eval-formulas` uses the same standard run-folder contract:
 
 ```text
-<runs-root>/
+runs/artifacts/
   forward-test/
     <target>/
       <dataset-id>/
@@ -83,9 +83,9 @@ Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
               lockbox.md
 ```
 
-The matching registry record is written at
-`forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`. Registry records
-hash formulas instead of embedding the formula text.
+The matching registry record is written under
+`runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`.
+Registry records hash formulas instead of embedding the formula text.
 
 Common forward-test outputs are:
 
@@ -135,7 +135,7 @@ will feed a holdout confirmation. The export includes comment metadata and a
 research note; `eval-formulas` ignores those comments. The command also writes
 `formula_export_manifest.json` for strict protocol validation. Manifest schema
 version `2` uses `source_output_dir_path_sha256` to make clear that this value
-hashes the source output directory path string, not directory contents.
+hashes the source run folder path string, not directory contents.
 
 You can also query `cumulative.duckdb` with DuckDBâ€™s CLI:
 
@@ -161,6 +161,6 @@ duckdb runs/artifacts/comb/next_bar_color_and_wicks/long/tiny_sample/quickstart_
 
 ## Resume metadata
 
-`run_manifest.json` binds an output directory to the CSV fingerprint and resume-sensitive configuration. The DuckDB database stores the matching resume offset used to continue enumeration without restarting from zero.
+`run_manifest.json` binds a run folder to the CSV fingerprint and resume-sensitive configuration. The DuckDB database stores the matching resume offset used to continue enumeration without restarting from zero.
 
 If you delete Parquet parts manually but keep the metadata, Barsmith may warn that resume offsets exist without corresponding stored parts.

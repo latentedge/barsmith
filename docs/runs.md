@@ -1,10 +1,10 @@
 # Running experiments
 
-This page focuses on long-running `comb` runs: organizing output dirs, resuming safely, and choosing batch sizes.
+This page focuses on long-running `comb` runs: organizing standard run folders, resuming safely, and choosing batch sizes.
 
 ## Output directory layout
 
-Treat `--output-dir` as the run folder. Typical contents:
+Barsmith writes each run under `runs/artifacts` by default. Typical contents:
 
 - `barsmith_prepared.csv`
 - `run_manifest.json`
@@ -16,17 +16,15 @@ Treat `--output-dir` as the run folder. Typical contents:
 - `checksums.sha256`
 - `reports/summary.md`
 
-For new long-running experiments, prefer the standardized layout:
+For long-running experiments, set a stable `--run-id` when you plan to resume:
 
 ```bash
 barsmith_cli comb \
   --csv ../es_30m.csv \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug no_stacking \
-  --registry-dir runs/registry
+  --run-id no_stacking
 ```
 
 This writes the run under:
@@ -35,7 +33,7 @@ This writes the run under:
 runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v2/<run-id>/
 ```
 
-`runs/artifacts/` is ignored by Git. The optional registry JSON under
+`runs/artifacts/` is ignored by Git. The registry JSON under
 `runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json` is designed
 to be small enough to commit: it records the run ID, dataset ID, target,
 direction, Git SHA, command hash, portable run path, top metrics, and artifact
@@ -50,18 +48,17 @@ Barsmith resumes by extending the combination enumeration stream, scoped to a ru
 
 Practical rules:
 
-- Reuse the same `--output-dir` to continue a run.
-- Reuse the same generated run folder to continue a standardized run.
+- Reuse the same generated run folder to continue a run.
+- Use the same `--run-id` when you need a stable resumable folder.
 - Increasing `--max-depth` is allowed; Barsmith continues after the already processed lower-depth prefix.
-- If the input CSV or another resume-sensitive setting changes, Barsmith will refuse to reuse the output dir unless you pass `--force`.
+- If the input CSV or another resume-sensitive setting changes, Barsmith will refuse to reuse the run folder unless you pass `--force`.
 - If you want to override the stored resume offset (start from a specific point), pass `--resume-from`.
 
-Use `--run-id <ID>` when you need a stable resumable standardized folder name.
-If omitted, Barsmith creates `<UTC timestamp>_<git short sha>_<run slug>`.
+If `--run-id` is omitted, Barsmith creates `<UTC timestamp>_<git short sha>_<run slug>`.
 
 ## Prepared dataset overwrite (`--ack-new-df`)
 
-The default CLI always writes `output-dir/barsmith_prepared.csv`.
+The default CLI always writes `barsmith_prepared.csv` into the run folder.
 
 - If it already exists, you must pass `--ack-new-df` to overwrite it.
 - `--force` clears Parquet/DuckDB outputs but does not implicitly “bless” overwriting `barsmith_prepared.csv`.
@@ -95,10 +92,8 @@ barsmith_cli eval-formulas \
   --cutoff 2024-12-31 \
   --stacking-mode no-stacking \
   --position-sizing fractional \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
   --run-slug no_stacking_forward \
-  --registry-dir runs/registry \
   --plot \
   --plot-mode combined
 ```

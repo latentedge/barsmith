@@ -83,7 +83,7 @@ Strict workflows use four stages:
 
 The source combination run matters. If `comb` searched the full history, a later `eval-formulas --cutoff` is not a clean holdout, because the exported candidate set already saw the post or lockbox rows. Strict protocol mode rejects candidate exports whose manifest cannot prove discovery/pre-only provenance.
 
-Lockbox mode is deliberately restrictive. It accepts exactly one formula, disables selection, writes `reports/lockbox.md`, and records lockbox attempt metadata in the registry when `--registry-dir` is used. Re-running the same lockbox formula/protocol requires `--ack-rerun-lockbox` and is marked as contaminated rerun evidence.
+Lockbox mode is deliberately restrictive. It accepts exactly one formula, disables selection, writes `reports/lockbox.md`, and records lockbox attempt metadata in the registry. Re-running the same lockbox formula/protocol requires `--ack-rerun-lockbox` and is marked as contaminated rerun evidence.
 
 ## Strict protocol
 
@@ -164,10 +164,8 @@ barsmith_cli comb \
   --position-sizing contracts \
   --asset MES \
   --date-end 2024-12-31 \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug discovery_pre_2024_12_31 \
-  --registry-dir runs/registry
+  --run-id discovery_pre_2024_12_31
 ```
 
 Export a candidate file from a combination run:
@@ -183,7 +181,7 @@ barsmith_cli results \
   --research-protocol research_protocol.json
 ```
 
-The exported file includes comment metadata and a research note. It also writes `formula_export_manifest.json`, which strict validation uses to reject contaminated candidate files. Manifest schema version `2` names the path hash `source_output_dir_path_sha256` so it is clear that the value fingerprints the source path string, not the directory contents. `eval-formulas` ignores comment lines, so the formula file remains directly runnable.
+The exported file includes comment metadata and a research note. It also writes `formula_export_manifest.json`, which strict validation uses to reject contaminated candidate files. Manifest schema version `2` names the path hash `source_output_dir_path_sha256` so it is clear that the value fingerprints the source run-folder path string, not the directory contents. `eval-formulas` ignores comment lines, so the formula file remains directly runnable.
 
 Run holdout confirmation:
 
@@ -203,10 +201,8 @@ barsmith_cli eval-formulas \
   --pre-min-trades 100 \
   --post-min-trades 30 \
   --post-warn-below-trades 50 \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug holdout_confirm \
-  --registry-dir runs/registry \
+  --run-id holdout_confirm \
   --plot \
   --plot-mode combined
 ```
@@ -226,8 +222,6 @@ barsmith_cli eval-formulas \
   --research-protocol research_protocol.json \
   --formula-export-manifest formula_export_manifest.json \
   --stacking-mode no-stacking \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug lockbox_once \
-  --registry-dir runs/registry
+  --run-id lockbox_once
 ```

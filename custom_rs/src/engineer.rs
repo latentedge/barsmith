@@ -424,7 +424,7 @@ pub fn prepare_dataset_with_options(
                      path: {}\n\
                      existing sha256: {}\n\
                      new sha256: {}\n\
-                     Rerun with --ack-new-df to overwrite and continue, or choose a fresh --output-dir to preserve prior results.",
+                     Rerun with --ack-new-df to overwrite and continue, or choose a fresh --run-id to preserve prior results.",
                     output_path.display(),
                     old_hash,
                     new_hash
@@ -3192,7 +3192,7 @@ fn column_to_vec(frame: &DataFrame, name: &str) -> Result<Vec<f64>> {
 fn missing_atr_context(target_name: &str) -> String {
     format!(
         "Missing required 'atr' column for {target_name} target. Re-generate the engineered dataset \
-         with --ack-new-df or choose a fresh --output-dir so 'atr' is present."
+         with --ack-new-df or choose a fresh --run-id so 'atr' is present."
     )
 }
 

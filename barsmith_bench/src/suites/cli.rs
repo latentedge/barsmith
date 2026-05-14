@@ -91,7 +91,7 @@ pub fn run_strict_eval(
     write_strict_eval_fixture(&protocol_path, &manifest_path)?;
 
     let mut sample = 0usize;
-    let command = strict_eval_command_string(&binary, &prepared, &formulas, "<sample>");
+    let command = strict_eval_command_string(&binary, args, &prepared, &formulas, "<sample>");
     Ok(vec![measure(
         BenchmarkSpec {
             suite: "strict-eval".to_string(),
@@ -117,6 +117,7 @@ pub fn run_strict_eval(
                 &protocol_path,
                 &manifest_path,
                 &runs_root,
+                &runs_root.join("registry"),
             );
             run_child(&binary, &command_args)?;
             Ok(1)
@@ -178,12 +179,19 @@ fn run_comb_fixture(
         fs::remove_dir_all(runs_root)
             .with_context(|| format!("failed to remove {}", runs_root.display()))?;
     }
-    let command_args = comb_args(args, runs_root, dataset_id, run_id);
+    let registry_dir = runs_root.join("registry");
+    let command_args = comb_args(args, runs_root, &registry_dir, dataset_id, run_id);
     run_child(binary, &command_args)?;
     Ok(output_dir)
 }
 
-fn comb_args(args: &RunArgs, runs_root: &Path, dataset_id: &str, run_id: &str) -> Vec<String> {
+fn comb_args(
+    args: &RunArgs,
+    runs_root: &Path,
+    registry_dir: &Path,
+    dataset_id: &str,
+    run_id: &str,
+) -> Vec<String> {
     vec![
         "comb".to_string(),
         "--csv".to_string(),
@@ -196,6 +204,8 @@ fn comb_args(args: &RunArgs, runs_root: &Path, dataset_id: &str, run_id: &str) -
         "fractional".to_string(),
         "--runs-root".to_string(),
         runs_root.display().to_string(),
+        "--registry-dir".to_string(),
+        registry_dir.display().to_string(),
         "--dataset-id".to_string(),
         dataset_id.to_string(),
         "--run-id".to_string(),
@@ -278,6 +288,7 @@ fn strict_eval_args(
     protocol: &Path,
     manifest: &Path,
     runs_root: &Path,
+    registry_dir: &Path,
 ) -> Vec<String> {
     vec![
         "eval-formulas".to_string(),
@@ -310,6 +321,8 @@ fn strict_eval_args(
         "2".to_string(),
         "--runs-root".to_string(),
         runs_root.display().to_string(),
+        "--registry-dir".to_string(),
+        registry_dir.display().to_string(),
         "--dataset-id".to_string(),
         "formula_fixture".to_string(),
         "--run-id".to_string(),
@@ -340,18 +353,22 @@ fn run_child(binary: &Path, args: &[String]) -> Result<()> {
 
 fn comb_command_string(binary: &Path, args: &RunArgs, sample: &str) -> String {
     let runs_root = args.work_dir.join("comb-cli").join(sample);
-    command_string(binary, &comb_args(args, &runs_root, "bench_comb", "timed"))
+    let registry_dir = runs_root.join("registry");
+    command_string(
+        binary,
+        &comb_args(args, &runs_root, &registry_dir, "bench_comb", "timed"),
+    )
 }
 
 fn strict_eval_command_string(
     binary: &Path,
+    args: &RunArgs,
     prepared: &Path,
     formulas: &Path,
     sample: &str,
 ) -> String {
-    let root = PathBuf::from("target/barsmith-bench/work")
-        .join("strict-eval")
-        .join(sample);
+    let root = args.work_dir.join("strict-eval").join(sample);
+    let registry_dir = root.join("registry");
     command_string(
         binary,
         &strict_eval_args(
@@ -360,6 +377,7 @@ fn strict_eval_command_string(
             Path::new("<protocol>"),
             Path::new("<manifest>"),
             &root,
+            &registry_dir,
         ),
     )
 }

@@ -16,7 +16,10 @@ fn barsmith_cmd() -> Command {
         Command::new(bin)
     } else {
         let mut cmd = Command::new("cargo");
-        cmd.args(["run", "-p", "barsmith_cli", "--"]);
+        cmd.arg("run")
+            .arg("--manifest-path")
+            .arg(workspace_root().join("Cargo.toml"))
+            .args(["-p", "barsmith_cli", "--"]);
         cmd
     }
 }
@@ -33,8 +36,7 @@ fn cli_runs_on_sample_dataset() {
         sample_csv.display()
     );
 
-    let temp_dir = tempdir().expect("temp output dir");
-    let output_dir = temp_dir.path().join("barsmith_output");
+    let temp_dir = tempdir().expect("temp run root");
 
     let mut cmd = barsmith_cmd();
 
@@ -49,8 +51,10 @@ fn cli_runs_on_sample_dataset() {
             "next_bar_color_and_wicks",
             "--position-sizing",
             "fractional",
-            "--output-dir",
-            output_dir.to_str().expect("output"),
+            "--dataset-id",
+            "tiny sample",
+            "--run-id",
+            "sample smoke",
             "--max-depth",
             "2",
             "--min-samples",
@@ -63,18 +67,28 @@ fn cli_runs_on_sample_dataset() {
             "10",
             "--dry-run",
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .status()
         .expect("failed to spawn barsmith_cli");
 
     assert!(status.success(), "barsmith_cli exited with {status:?}");
 
-    let prepared_csv = output_dir.join("barsmith_prepared.csv");
-    assert!(
-        prepared_csv.exists(),
-        "expected engineered CSV at {}",
-        prepared_csv.display()
-    );
+    let output_dir = temp_dir
+        .path()
+        .join("runs")
+        .join("artifacts")
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("tiny_sample")
+        .join("sample_smoke");
+    for path in [
+        output_dir.join("barsmith_prepared.csv"),
+        output_dir.join("command.txt"),
+        output_dir.join("command.json"),
+    ] {
+        assert!(path.exists(), "expected {}", path.display());
+    }
 }
 
 #[test]
@@ -83,8 +97,16 @@ fn cli_results_queries_real_run_output() {
         .join("tests")
         .join("data")
         .join("ohlcv_tiny.csv");
-    let temp_dir = tempdir().expect("temp output dir");
-    let output_dir = temp_dir.path().join("barsmith_output");
+    let temp_dir = tempdir().expect("temp run root");
+    let output_dir = temp_dir
+        .path()
+        .join("runs")
+        .join("artifacts")
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("tiny_sample")
+        .join("results_smoke");
 
     let mut run_cmd = barsmith_cmd();
     let run_status = run_cmd
@@ -98,8 +120,10 @@ fn cli_results_queries_real_run_output() {
             "next_bar_color_and_wicks",
             "--position-sizing",
             "fractional",
-            "--output-dir",
-            output_dir.to_str().expect("output"),
+            "--dataset-id",
+            "tiny sample",
+            "--run-id",
+            "results smoke",
             "--max-depth",
             "2",
             "--min-samples",
@@ -116,7 +140,7 @@ fn cli_results_queries_real_run_output() {
             "off",
             "--force",
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .status()
         .expect("failed to spawn barsmith_cli comb");
     assert!(run_status.success(), "comb exited with {run_status:?}");
@@ -287,7 +311,7 @@ fn cli_results_queries_real_run_output() {
 
 #[test]
 fn cli_eval_formulas_strict_protocol_writes_overfit_and_stress_reports() {
-    let temp_dir = tempdir().expect("temp output dir");
+    let temp_dir = tempdir().expect("temp run root");
     let prepared = workspace_root()
         .join("barsmith_rs")
         .join("tests")
@@ -432,7 +456,7 @@ fn cli_eval_formulas_strict_protocol_writes_overfit_and_stress_reports() {
 
 #[test]
 fn cli_eval_formulas_lockbox_rejects_multi_formula_files() {
-    let temp_dir = tempdir().expect("temp output dir");
+    let temp_dir = tempdir().expect("temp run root");
     let prepared = workspace_root()
         .join("barsmith_rs")
         .join("tests")
@@ -456,10 +480,10 @@ fn cli_eval_formulas_lockbox_rejects_multi_formula_files() {
             "2x_atr_tp_atr_stop",
             "--stage",
             "lockbox",
-            "--output-dir",
-            temp_dir.path().join("lockbox").to_str().expect("output"),
+            "--run-id",
+            "lockbox_rejects_multi_formula_files",
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .output()
         .expect("failed to spawn lockbox eval");
 
@@ -480,9 +504,7 @@ fn cli_comb_writes_standard_output_metadata_and_registry() {
         .join("tests")
         .join("data")
         .join("ohlcv_tiny.csv");
-    let temp_dir = tempdir().expect("temp output dir");
-    let runs_root = temp_dir.path().join("artifacts");
-    let registry_dir = temp_dir.path().join("registry");
+    let temp_dir = tempdir().expect("temp run root");
 
     let mut cmd = barsmith_cmd();
     let status = cmd
@@ -496,14 +518,10 @@ fn cli_comb_writes_standard_output_metadata_and_registry() {
             "next_bar_color_and_wicks",
             "--position-sizing",
             "fractional",
-            "--runs-root",
-            runs_root.to_str().expect("runs root"),
             "--dataset-id",
             "tiny sample",
             "--run-id",
             "metadata smoke",
-            "--registry-dir",
-            registry_dir.to_str().expect("registry"),
             "--max-depth",
             "2",
             "--min-samples",
@@ -520,19 +538,25 @@ fn cli_comb_writes_standard_output_metadata_and_registry() {
             "off",
             "--force",
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .status()
         .expect("failed to spawn barsmith_cli comb");
 
     assert!(status.success(), "comb exited with {status:?}");
 
-    let output_dir = runs_root
+    let output_dir = temp_dir
+        .path()
+        .join("runs")
+        .join("artifacts")
         .join("comb")
         .join("next_bar_color_and_wicks")
         .join("long")
         .join("tiny_sample")
         .join("metadata_smoke");
-    let registry_path = registry_dir
+    let registry_path = temp_dir
+        .path()
+        .join("runs")
+        .join("registry")
         .join("comb")
         .join("next_bar_color_and_wicks")
         .join("long")
@@ -585,7 +609,7 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
     assert!(prepared_csv.exists(), "missing {}", prepared_csv.display());
     assert!(formulas.exists(), "missing {}", formulas.display());
 
-    let temp_dir = tempdir().expect("temp output dir");
+    let temp_dir = tempdir().expect("temp run root");
     let csv_out = temp_dir.path().join("formula_results.csv");
     let json_out = temp_dir.path().join("formula_results.json");
     let selection_out = temp_dir.path().join("selection_report.json");
@@ -611,6 +635,10 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
             "no-stacking",
             "--cutoff",
             "2024-12-31",
+            "--dataset-id",
+            "tiny forward",
+            "--run-id",
+            "explicit outputs",
             "--report-top",
             "2",
             "--csv-out",
@@ -637,7 +665,7 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
             "--plot-out",
             plot_out.to_str().expect("plot"),
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .status()
         .expect("failed to spawn barsmith_cli eval-formulas");
 
@@ -656,6 +684,31 @@ fn cli_eval_formulas_writes_outputs_and_plot() {
         let metadata = std::fs::metadata(path).expect("output should exist");
         assert!(metadata.len() > 0, "{} should not be empty", path.display());
     }
+    let standard_output_dir = temp_dir
+        .path()
+        .join("runs")
+        .join("artifacts")
+        .join("forward-test")
+        .join("2x_atr_tp_atr_stop")
+        .join("tiny_forward")
+        .join("2024-12-31")
+        .join("explicit_outputs");
+    for path in [
+        standard_output_dir.join("command.txt"),
+        standard_output_dir.join("command.json"),
+        standard_output_dir.join("run_manifest.json"),
+        temp_dir
+            .path()
+            .join("runs")
+            .join("registry")
+            .join("forward-test")
+            .join("2x_atr_tp_atr_stop")
+            .join("tiny_forward")
+            .join("2024-12-31")
+            .join("explicit_outputs.json"),
+    ] {
+        assert!(path.exists(), "expected {}", path.display());
+    }
 }
 
 #[test]
@@ -667,9 +720,7 @@ fn cli_eval_formulas_writes_standard_forward_test_folder_and_registry() {
     let prepared_csv = fixture_dir.join("formula_eval_prepared.csv");
     let formulas = fixture_dir.join("formula_eval_formulas.txt");
 
-    let temp_dir = tempdir().expect("temp output dir");
-    let runs_root = temp_dir.path().join("artifacts");
-    let registry_dir = temp_dir.path().join("registry");
+    let temp_dir = tempdir().expect("temp run root");
 
     let mut cmd = barsmith_cmd();
     let status = cmd
@@ -687,32 +738,34 @@ fn cli_eval_formulas_writes_standard_forward_test_folder_and_registry() {
             "2024-12-31",
             "--report-top",
             "2",
-            "--runs-root",
-            runs_root.to_str().expect("runs root"),
             "--dataset-id",
             "tiny forward",
             "--run-id",
             "forward smoke",
-            "--registry-dir",
-            registry_dir.to_str().expect("registry"),
             "--checksum-artifacts",
             "--plot",
             "--plot-mode",
             "combined",
         ])
-        .current_dir(workspace_root())
+        .current_dir(temp_dir.path())
         .status()
         .expect("failed to spawn barsmith_cli eval-formulas");
 
     assert!(status.success(), "eval-formulas exited with {status:?}");
 
-    let output_dir = runs_root
+    let output_dir = temp_dir
+        .path()
+        .join("runs")
+        .join("artifacts")
         .join("forward-test")
         .join("2x_atr_tp_atr_stop")
         .join("tiny_forward")
         .join("2024-12-31")
         .join("forward_smoke");
-    let registry_path = registry_dir
+    let registry_path = temp_dir
+        .path()
+        .join("runs")
+        .join("registry")
         .join("forward-test")
         .join("2x_atr_tp_atr_stop")
         .join("tiny_forward")

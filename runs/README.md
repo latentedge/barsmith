@@ -24,11 +24,12 @@ barsmith_cli comb \
   --csv ../es_30m.csv \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug no_stacking \
-  --registry-dir runs/registry
+  --run-slug no_stacking
 ```
+
+`runs/artifacts` and `runs/registry` are the defaults. Use `--runs-root` or
+`--registry-dir` only when a run needs a different root.
 
 Registry records intentionally store a portable run path and formula hash rather
 than local artifact paths or formula text, so a public repo can keep audit
@@ -44,10 +45,8 @@ barsmith_cli eval-formulas \
   --formulas formulas.txt \
   --target 2x_atr_tp_atr_stop \
   --cutoff 2024-12-31 \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
   --run-slug no_stacking_forward \
-  --registry-dir runs/registry \
   --plot \
   --plot-mode combined
 ```

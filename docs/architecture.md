@@ -15,7 +15,7 @@ This page describes Barsmithâ€™s supported Rust workflows at a high level.
 1. CLI parses flags and builds a `Config`.
 2. The builtin engine:
    - reads the raw OHLCV CSV,
-   - writes `output-dir/barsmith_prepared.csv`,
+   - writes `barsmith_prepared.csv` into the resolved run folder,
    - builds a feature catalog (`FeatureDescriptor`s) plus optional comparison predicates.
 3. The core pipeline (`barsmith_rs`) runs:
    - loads the prepared dataset columnar (and applies optional date filters),
@@ -29,7 +29,7 @@ The README contains a detailed flowchart: see `README.md` (â€œHow `comb` worksâ€
 
 ## Formula evaluation flow
 
-`eval-formulas` is a read-only evaluator over an existing prepared dataset unless output paths are provided.
+`eval-formulas` evaluates an existing prepared dataset and writes standard forward-test metadata by default.
 
 1. The CLI parses the ranked formula file into boolean flags and comparison clauses.
 2. `formula_eval` loads `barsmith_prepared.csv`, validates target/RR/exit/sizing columns, and splits pre/post windows around the cutoff.
@@ -44,15 +44,15 @@ The README contains a detailed flowchart: see `README.md` (â€œHow `comb` worksâ€
 
 ## Durability model
 
-Barsmith writes incremental Parquet parts under `output-dir/results_parquet/` and maintains a DuckDB catalog (`output-dir/cumulative.duckdb`) that provides a stable `results` view across all parts.
+Barsmith writes incremental Parquet parts under `runs/artifacts/.../results_parquet/` and maintains a DuckDB catalog (`runs/artifacts/.../cumulative.duckdb`) that provides a stable `results` view across all parts.
 
-Resume is index-based and protected by `run_manifest.json`, which binds the output directory to the CSV fingerprint and resume-sensitive configuration. This avoids silently resuming with a different dataset, catalog, target, direction, date window, sizing/cost model, or pruning mode. Increasing `--max-depth` is allowed because deeper combinations extend the same deterministic stream.
+Resume is index-based and protected by `run_manifest.json`, which binds the run folder to the CSV fingerprint and resume-sensitive configuration. This avoids silently resuming with a different dataset, catalog, target, direction, date window, sizing/cost model, or pruning mode. Increasing `--max-depth` is allowed because deeper combinations extend the same deterministic stream.
 
 ## Core module responsibilities
 
 - `config`: runtime configuration and domain enums.
 - `pipeline`: orchestration for dataset loading, catalog pruning, enumeration, evaluation, reporting, and uploads.
-- `run_identity`: output-directory compatibility contract and `run_manifest.json` handling.
+- `run_identity`: run-folder compatibility contract and `run_manifest.json` handling.
 - `batch_tuning`: pure auto-batch heuristic and tests.
 - `subset_pruning`: depth-2 dead-pair cache and background snapshot saver.
 - `storage`: Parquet/DuckDB persistence, resume metadata, and top-results queries.
@@ -94,7 +94,7 @@ Keep expensive work out of the per-combination loop: avoid string formatting, he
 
 Resume offsets are safe only when the deterministic enumeration stream is unchanged for the already processed prefix.
 
-`run_manifest.json` binds an output directory to:
+`run_manifest.json` binds a run folder to:
 
 - source CSV fingerprint,
 - target and direction,

@@ -57,10 +57,8 @@ cargo run -p barsmith_cli -- comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --runs-root runs/artifacts \
   --dataset-id tiny_sample \
   --run-id quickstart_dry \
-  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -75,10 +73,8 @@ cargo run -p barsmith_cli -- comb \
   --csv tests/data/ohlcv_tiny.csv \
   --direction long \
   --target next_bar_color_and_wicks \
-  --runs-root runs/artifacts \
   --dataset-id tiny_sample \
   --run-id quickstart_real \
-  --registry-dir runs/registry \
   --max-depth 3 \
   --min-samples 100 \
   --workers 1 \
@@ -105,7 +101,8 @@ barsmith_cli results --help
 
 ## Outputs (what gets written)
 
-`--output-dir` becomes a durable “run folder”. You’ll typically see:
+Barsmith writes each run into the standard run folder under `runs/artifacts`.
+You’ll typically see:
 
 - `barsmith_prepared.csv` (engineered dataset produced for the run)
 - `run_manifest.json` (run identity used to validate safe resume)
@@ -115,24 +112,22 @@ barsmith_cli results --help
 - `barsmith.log` (unless `--no-file-log` is set)
 - `checksums.sha256` and `reports/summary.md` (run closeout artifacts)
 
-Barsmith can resume from an existing output directory only when the run manifest matches the current CSV fingerprint and resume-sensitive settings. Increasing `--max-depth` is allowed because the deterministic enumeration stream extends the already processed prefix. Use `--force` or a fresh `--output-dir` for an incompatible run. When reusing an existing `--output-dir`, pass `--ack-new-df` so the CLI can overwrite `barsmith_prepared.csv`.
+Barsmith can resume from an existing run folder only when the run manifest matches the current CSV fingerprint and resume-sensitive settings. Increasing `--max-depth` is allowed because the deterministic enumeration stream extends the already processed prefix. Use `--force` or a fresh `--run-id` for an incompatible run. When reusing an existing run folder, pass `--ack-new-df` so the CLI can overwrite `barsmith_prepared.csv`.
 
-For new research runs, prefer the standardized layout:
+The standardized layout is the default:
 
 ```bash
 cargo run --release -p barsmith_cli -- comb \
   --csv ../es_30m.csv \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug no_stacking \
-  --registry-dir runs/registry
+  --run-slug no_stacking
 ```
 
 This writes full artifacts under
-`runs/artifacts/comb/<target>/<direction>/<dataset-id>/<run-id>/` and writes an
-optional lightweight registry JSON under
+`runs/artifacts/comb/<target>/<direction>/<dataset-id>/<run-id>/` and writes a
+lightweight registry JSON under
 `runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json`. Full
 artifacts remain ignored by Git; registry records are meant for future audit
 traceability without embedding local artifact paths or formula text. Combination
@@ -150,10 +145,8 @@ cargo run -p barsmith_cli -- eval-formulas \
   --cutoff 2024-12-31 \
   --stacking-mode no-stacking \
   --position-sizing fractional \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
   --run-slug no_stacking_forward \
-  --registry-dir runs/registry \
   --plot \
   --plot-mode combined
 ```
@@ -197,7 +190,7 @@ flowchart TD
     D --> E["Prepare engineered dataset"]
     E --> E1["Read source CSV (OHLCV)"]
     E1 --> E2["Engineer features + label targets"]
-    E2 --> E3["Write output-dir/barsmith_prepared.csv"]
+    E2 --> E3["Write run-folder/barsmith_prepared.csv"]
     E3 --> F["Build feature catalog"]
     F --> F1["Load prepared CSV (ColumnarData)"]
     F1 --> F2["Build FeatureDescriptors + ComparisonSpecs"]
@@ -236,9 +229,9 @@ The core pipeline (`barsmith_rs`) expects a “prepared” dataset that contains
 - `<target>_eligible` (optional) as a boolean gate for trade eligibility
 - `<target>_exit_i` (required when `--stacking-mode no-stacking`) as an integer next index to jump to after a trade
 
-The default CLI generates this prepared dataset via `barsmith_builtin` and writes it to `output-dir/barsmith_prepared.csv`.
+The default CLI generates this prepared dataset via `barsmith_builtin` and writes it to `runs/artifacts/.../barsmith_prepared.csv`.
 
-Note: the built-in CLI always writes `barsmith_prepared.csv`. If that file already exists in `--output-dir`, you must pass `--ack-new-df` to overwrite it.
+Note: the built-in CLI always writes `barsmith_prepared.csv`. If that file already exists in the run folder, you must pass `--ack-new-df` to overwrite it.
 
 ## Data format
 
@@ -354,7 +347,7 @@ Performance depends heavily on:
 This is an example command shape for a long local run with the default builtin target. It is macOS-specific (`caffeinate`) and this repo is marked unstable.
 
 ```bash
-caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.csv --direction short --target next_bar_color_and_wicks --runs-root runs/artifacts --dataset-id es_30m_official_v2 --run-slug no_stacking --registry-dir runs/registry --max-depth 5 --min-samples 4000 --date-end 2024-12-31 --feature-pairs --auto-batch --batch-size 8000000 --stats-detail core --report formula --top-k 10000 --max-drawdown 25 --max-drawdown-report 25 --min-calmar-report 1.0 --subset-pruning --asset MES --profile-eval off
+caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.csv --direction short --target next_bar_color_and_wicks --dataset-id es_30m_official_v2 --run-slug no_stacking --max-depth 5 --min-samples 4000 --date-end 2024-12-31 --feature-pairs --auto-batch --batch-size 8000000 --stats-detail core --report formula --top-k 10000 --max-drawdown 25 --max-drawdown-report 25 --min-calmar-report 1.0 --subset-pruning --asset MES --profile-eval off
 ```
 
 ## Project layout

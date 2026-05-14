@@ -22,28 +22,25 @@ Use `comb` when you want Barsmith to engineer features, enumerate combinations, 
 ### Inputs / outputs
 
 - `--csv <FILE>`: raw OHLCV CSV input
-- `--output-dir <DIR>`: explicit run folder for legacy-compatible layouts
-- `--runs-root <DIR>`: build the standard run folder as `<runs-root>/comb/<target>/<direction>/<dataset-id>/<run-id>/`
+- `--runs-root <DIR>`: optional override for the artifact root; defaults to `runs/artifacts`
 - `--dataset-id <ID>`: dataset label for standard output paths; defaults to the input CSV stem
 - `--run-id <ID>` / `--run-slug <TEXT>`: control the standard run folder name
-- `--registry-dir <DIR>`: write a lightweight audit registry JSON record under `comb/<target>/<direction>/<dataset-id>/<run-id>.json`
+- `--registry-dir <DIR>`: optional override for the registry root; defaults to `runs/registry`
 - `--artifact-uri <URI>`: durable storage location recorded in command and registry metadata
 - `--checksum-artifacts`: include Parquet, DuckDB, and log files in `checksums.sha256`
 - `--target <NAME>`: target identifier
 - `--engine auto|builtin|custom`: feature-engineering engine. `auto` uses the builtin engine for next-bar targets and the custom engine for richer Rust targets.
 - `--direction long|short|both`: filter which side is evaluated
 
-For new research runs, prefer `--runs-root` plus `--registry-dir`:
+Standard output is the default:
 
 ```bash
 barsmith_cli comb \
   --csv ../es_30m.csv \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
-  --run-slug no_stacking \
-  --registry-dir runs/registry
+  --run-slug no_stacking
 ```
 
 The generated registry record is safe for Git by design: it stores a portable
@@ -90,8 +87,8 @@ Builtin-engine targets are `next_bar_up`, `next_bar_down`, and
 
 ### Resume / overwrite knobs
 
-- `--force`: clears existing cumulative outputs under `--output-dir` (DuckDB + Parquet batches) and starts fresh
-- `--ack-new-df`: overwrite an existing `output-dir/barsmith_prepared.csv` (the builtin CLI always writes this file)
+- `--force`: clears existing cumulative outputs under the resolved run folder (DuckDB + Parquet batches) and starts fresh
+- `--ack-new-df`: overwrite an existing `barsmith_prepared.csv` in the run folder
 
 ### S3 upload
 
@@ -126,10 +123,8 @@ barsmith_cli eval-formulas \
   --target 2x_atr_tp_atr_stop \
   --stacking-mode no-stacking \
   --position-sizing contracts \
-  --runs-root runs/artifacts \
   --dataset-id es_30m_official_v2 \
   --run-slug contracts_forward \
-  --registry-dir runs/registry \
   --plot \
   --plot-mode combined
 ```
@@ -160,11 +155,10 @@ Important flags:
 - `--research-protocol <FILE>`: strict research protocol JSON.
 - `--formula-export-manifest <FILE>`: provenance sidecar written by `results --export-formulas`.
 - `--ack-rerun-lockbox`: record a repeated lockbox attempt as contaminated rerun evidence.
-- `--output-dir <DIR>`: explicit forward-test run folder.
-- `--runs-root <DIR>`: build the standard forward-test folder as `<runs-root>/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>/`.
+- `--runs-root <DIR>`: optional override for the artifact root; defaults to `runs/artifacts`.
 - `--dataset-id <ID>`: dataset label for standard output paths.
 - `--run-id <ID>` / `--run-slug <TEXT>`: control the standard run folder name.
-- `--registry-dir <DIR>`: write a lightweight audit registry JSON record under `forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`.
+- `--registry-dir <DIR>`: optional override for the registry root; defaults to `runs/registry`.
 - `--artifact-uri <URI>`: durable storage location recorded in command and registry metadata.
 - `--checksum-artifacts`: include generated CSV, JSON, and plot files in `checksums.sha256`.
 - `--cutoff YYYY-MM-DD`: pre window is `<= cutoff`; post window is `> cutoff`.
@@ -198,8 +192,8 @@ Important flags:
 - `--asset <CODE>`: loads tick value, point value, margin, commission, and default slippage for known assets.
 - `--plot`: render PNG equity-curve plots from exported curve rows.
 
-When `--output-dir` or `--runs-root` is present, `eval-formulas` defaults these
-outputs into the run folder unless you override them explicitly:
+`eval-formulas` defaults these outputs into the standard run folder unless you
+override them explicitly:
 
 - `formula_results.csv`
 - `formula_results.json`
@@ -224,7 +218,7 @@ See `docs/research-protocol.md` for the recommended pre/post selection workflow 
 
 ## `results`
 
-Use `results` to query a completed `comb` output directory from Rust:
+Use `results` to query a completed `comb` run folder from Rust:
 
 ```bash
 barsmith_cli results \

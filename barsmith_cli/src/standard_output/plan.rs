@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use crate::cli::{CombArgs, EvalFormulasArgs, PlotModeValue};
 
@@ -42,20 +42,7 @@ pub fn resolve_comb_output(args: &CombArgs, argv: &[OsString]) -> Result<Standar
         .join(direction)
         .join(&dataset_id)
         .join(&run_id);
-    let output_dir = match (&args.runs_root, &args.output_dir) {
-        (Some(root), None) => root.join(&run_path),
-        (None, Some(path)) => path.clone(),
-        (Some(_), Some(_)) => {
-            return Err(anyhow!(
-                "--runs-root and --output-dir are mutually exclusive"
-            ));
-        }
-        (None, None) => {
-            return Err(anyhow!(
-                "either --output-dir or --runs-root must be provided"
-            ));
-        }
-    };
+    let output_dir = args.runs_root.join(&run_path);
 
     let command_argv: Vec<String> = argv
         .iter()
@@ -75,7 +62,7 @@ pub fn resolve_comb_output(args: &CombArgs, argv: &[OsString]) -> Result<Standar
         created_at: now_iso(),
         git_sha,
         git_short_sha,
-        registry_dir: args.registry_dir.clone(),
+        registry_dir: Some(args.registry_dir.clone()),
         artifact_uri: args.artifact_uri.clone(),
         checksum_artifacts: args.checksum_artifacts,
         command_argv,
@@ -86,11 +73,7 @@ pub fn resolve_comb_output(args: &CombArgs, argv: &[OsString]) -> Result<Standar
 pub fn resolve_forward_output(
     args: &EvalFormulasArgs,
     argv: &[OsString],
-) -> Result<Option<StandardOutputPlan>> {
-    if args.runs_root.is_none() && args.output_dir.is_none() {
-        return Ok(None);
-    }
-
+) -> Result<StandardOutputPlan> {
     let target = sanitize_segment(&normalize_target(&args.target));
     let cutoff = sanitize_segment(&args.cutoff);
     let dataset_id = args
@@ -121,16 +104,7 @@ pub fn resolve_forward_output(
         .join(&dataset_id)
         .join(&cutoff)
         .join(&run_id);
-    let output_dir = match (&args.runs_root, &args.output_dir) {
-        (Some(root), None) => root.join(&run_path),
-        (None, Some(path)) => path.clone(),
-        (Some(_), Some(_)) => {
-            return Err(anyhow!(
-                "--runs-root and --output-dir are mutually exclusive"
-            ));
-        }
-        (None, None) => unreachable!("handled above"),
-    };
+    let output_dir = args.runs_root.join(&run_path);
 
     let command_argv: Vec<String> = argv
         .iter()
@@ -138,7 +112,7 @@ pub fn resolve_forward_output(
         .collect();
     let command_line = shell_join(&command_argv);
 
-    Ok(Some(StandardOutputPlan {
+    Ok(StandardOutputPlan {
         run_kind: RunKind::ForwardTest,
         output_dir,
         run_path,
@@ -150,12 +124,12 @@ pub fn resolve_forward_output(
         created_at: now_iso(),
         git_sha,
         git_short_sha,
-        registry_dir: args.registry_dir.clone(),
+        registry_dir: Some(args.registry_dir.clone()),
         artifact_uri: args.artifact_uri.clone(),
         checksum_artifacts: args.checksum_artifacts,
         command_argv,
         command_line,
-    }))
+    })
 }
 
 pub fn apply_forward_output_defaults(args: &mut EvalFormulasArgs, plan: &StandardOutputPlan) {
@@ -229,12 +203,11 @@ mod tests {
             direction: DirectionValue::Long,
             target: "2x_atr_tp_atr_stop".to_string(),
             engine: crate::cli::EngineValue::Auto,
-            output_dir: None,
-            runs_root: Some(PathBuf::from("runs/artifacts")),
+            runs_root: PathBuf::from(crate::cli::DEFAULT_RUNS_ROOT),
             dataset_id: Some("ES 30m Official V2".to_string()),
             run_id: Some("Manual Run 01".to_string()),
             run_slug: None,
-            registry_dir: Some(PathBuf::from("runs/registry")),
+            registry_dir: PathBuf::from(crate::cli::DEFAULT_REGISTRY_DIR),
             artifact_uri: Some("s3://bucket/barsmith/run".to_string()),
             checksum_artifacts: false,
             s3_output: None,
@@ -306,14 +279,35 @@ mod tests {
     }
 
     #[test]
-    fn explicit_output_dir_keeps_legacy_layout() {
+    fn registry_dir_defaults_to_standard_root() {
+        let plan = resolve_comb_output(
+            &args(),
+            &[OsString::from("barsmith"), OsString::from("comb")],
+        )
+        .expect("plan");
+
+        assert_eq!(
+            plan.registry_dir,
+            Some(PathBuf::from(crate::cli::DEFAULT_REGISTRY_DIR))
+        );
+    }
+
+    #[test]
+    fn custom_roots_override_standard_defaults() {
         let mut args = args();
-        args.output_dir = Some(PathBuf::from("tmp/out"));
-        args.runs_root = None;
+        args.runs_root = PathBuf::from("custom/artifacts");
+        args.registry_dir = PathBuf::from("custom/registry");
+
         let plan =
             resolve_comb_output(&args, &[OsString::from("barsmith"), OsString::from("comb")])
                 .expect("plan");
 
-        assert_eq!(plan.output_dir, PathBuf::from("tmp/out"));
+        assert_eq!(
+            plan.output_dir,
+            PathBuf::from(
+                "custom/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v2/manual_run_01"
+            )
+        );
+        assert_eq!(plan.registry_dir, Some(PathBuf::from("custom/registry")));
     }
 }
