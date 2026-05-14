@@ -10,18 +10,19 @@ This repo pins a Rust toolchain for consistent formatting/linting in CI. See `ru
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
-cargo doc --workspace --no-deps --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 cargo audit --deny warnings
 scripts/golden_smoke.sh
 scripts/benchmark_smoke.sh
 ```
 
-`scripts/benchmark_smoke.sh` uses normal Cargo build parallelism by default. On memory-constrained machines, use `CARGO_BUILD_JOBS=1 scripts/benchmark_smoke.sh` as a fallback.
+`scripts/benchmark_smoke.sh` uses normal Cargo build parallelism by default and writes a structured `barsmith_bench` JSON report. On memory-constrained machines, use `CARGO_BUILD_JOBS=1 scripts/benchmark_smoke.sh` as a fallback.
 
 ## Development principles
 
 - Keep CLI behavior explicit. Remove unsupported flags instead of accepting no-op compatibility shims.
 - Keep hot loops allocation-aware and benchmarked. Prefer readable helper boundaries outside tight loops.
+- Run the Rust benchmark gate before ending performance-sensitive implementation work and before pushing it.
 - Keep formula evaluation on the shared Rust evaluator path so ranked-formula workflows do not drift from combination-search semantics.
 - Keep resume semantics conservative. New settings that affect the search space or result meaning belong in the run identity manifest.
 - Keep generated outputs, local benchmark data, Parquet, DuckDB, and raw private CSVs out of git.

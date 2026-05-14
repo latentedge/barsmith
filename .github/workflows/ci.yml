@@ -37,10 +37,10 @@ jobs:
         run: cargo test --workspace --all-targets --all-features
 
       - name: Rust docs
-        run: cargo doc --workspace --no-deps --all-features
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 
       - name: Golden smoke
         run: scripts/golden_smoke.sh
 
-      - name: Benchmark smoke
+      - name: Rust benchmark smoke
         run: scripts/benchmark_smoke.sh

@@ -36,6 +36,17 @@ Performance-sensitive refactors should preserve these invariants unless the PR i
 
 This repo’s `.cargo/config.toml` sets `target-cpu=native` for local performance. This is great for on-machine runs, but not ideal for distributing binaries across heterogeneous CPUs.
 
+The default release profile is intentionally performance-oriented:
+
+- `opt-level = 3`
+- `codegen-units = 1`
+- `lto = "thin"`
+- local `target-cpu=native`
+
+Treat this profile as the baseline, not as proof that no better profile exists. Changes to `Cargo.toml`, `.cargo/config.toml`, `RUSTFLAGS`, allocator, linker, LTO, panic strategy, or CPU target must include a benchmark report and a comparison against the accepted same-machine baseline. Test FatLTO, `panic = "abort"`, strip settings, portable CPU flags, and PGO separately so build time, binary size, portability, and runtime effects are not mixed together.
+
+The 2026-05-14 release-profile audit kept the existing ThinLTO profile. On the smoke hard-gate suite, `lto = "fat"` and `panic = "abort"` did not beat the accepted same-machine baseline after their build-time cost and p95 regressions were considered. Do not change the default release profile without a new benchmark comparison.
+
 ## Benchmark note
 
 Internal benchmark (not a guarantee): ~120B combination candidates over ~5 days on a MacBook Pro (Apple M4).
@@ -50,6 +61,32 @@ Benchmark fixtures are documented in `benchmarks/README.md` and `benchmarks/fixt
 
 Do not commit Tier C raw data or generated benchmark outputs.
 
+## Rust Benchmark Gate
+
+Run a structured benchmark report from the repo root:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite smoke \
+  --samples 21 \
+  --out target/barsmith-bench/current.json
+```
+
+Compare two reports:
+
+```bash
+cargo run --release -p barsmith_bench -- compare \
+  --baseline target/barsmith-bench/baseline.json \
+  --candidate target/barsmith-bench/current.json \
+  --fail-on-regression
+```
+
+The JSON report records git SHA, dirty state, Rust version, target triple, OS/arch, CPU model, Cargo profile label, fixture hashes, samples, median, p95, min, max, mean, standard deviation, regression policy, and benchmark status.
+
+When reading comparison output, negative deltas are faster than the baseline and positive deltas are slower. Median is the normal-case timing and is the main signal for stable microbenchmarks. p95 is the tail sample and helps catch occasional slow paths. Mean confirms whether a p95 spike reflects the whole run or just one noisy sample.
+
+Use `--suite all` before risky hot-path refactors. Use `--suite smoke` for the fast pre-push gate.
+
 ## Local smoke benchmark
 
 Run a small release-mode benchmark smoke from the repo root:
@@ -58,6 +95,8 @@ Run a small release-mode benchmark smoke from the repo root:
 scripts/golden_smoke.sh
 scripts/benchmark_smoke.sh
 ```
+
+`scripts/benchmark_smoke.sh` is a thin wrapper around `barsmith_bench`. By default it runs the `comb-cli` suite and writes `target/barsmith-bench/benchmark-smoke.json`.
 
 Override the fixture and size without editing the script:
 
@@ -72,8 +111,9 @@ Record the command, git SHA, fixture tier, machine, Rust toolchain, and `/usr/bi
 
 ## Performance budget
 
-- Stable hot-loop microbenchmarks: no regression accepted without an explicit design tradeoff.
-- Noisy end-to-end smoke runs: investigate median regressions above 3% or p95 regressions above 5%.
+- Stable hot-loop microbenchmarks use `hard-gate`: median regressions above 3% block the change unless there is an explicit accepted tradeoff. p95 regressions above 5% block only when the mean also regresses above the median budget; p95-only spikes are marked for review so same-code scheduler noise does not create false hard failures.
+- Noisy end-to-end CLI benchmarks use `review-only`: regressions above the same thresholds require investigation and a recorded accept/reject decision, but do not fail the hard microbenchmark gate by themselves.
+- Missing hard-gate benchmarks on either side of a comparison fail the gate; update the baseline intentionally when adding, renaming, or removing a hard-gate benchmark.
 - Run before/after comparisons on the same machine, release profile, fixture, and command.
 - Readability-only refactors must prove parity with tests and preserve performance within this budget.
 

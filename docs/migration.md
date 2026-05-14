@@ -27,9 +27,9 @@ artifact paths.
 The old external result-query script has been removed. Use `barsmith_cli results` for routine top-result queries against `cumulative.duckdb` and `results_parquet/`.
 Use `barsmith_cli results --export-formulas <FILE>` to write query results as a ranked formula file for `eval-formulas`. Formula exports include comment metadata and a research note, and they should come from a discovery/pre-only run when they feed holdout confirmation.
 
-Formula export now also writes `formula_export_manifest.json` by default. Strict evaluation flows should export formulas with `results --research-protocol <FILE>` and pass the resulting manifest with `--strict-protocol --formula-export-manifest <FILE>` so Barsmith can reject stale, unbound, or window-contaminated candidate files.
+Formula export now also writes `formula_export_manifest.json` by default. Strict evaluation flows should export formulas with `results --research-protocol <FILE>` and pass the resulting manifest with `--strict-protocol --formula-export-manifest <FILE>` so Barsmith can reject stale, unbound, or window-contaminated candidate files. Manifest schema version `2` renames `source_output_dir_sha256` to `source_output_dir_path_sha256`; regenerate formula exports instead of reusing schema `1` sidecars.
 
-`barsmith_cli protocol init|validate|explain` creates and inspects strict research protocol manifests. `eval-formulas --stage lockbox` now requires exactly one frozen formula and refuses validation-ranked selection.
+`barsmith_cli protocol init|validate|explain` creates and inspects strict research protocol manifests. `protocol validate` now enforces schema version, `strict=true`, valid window ordering, and non-overlapping discovery/validation/lockbox windows. `eval-formulas --stage lockbox` now requires exactly one frozen formula and refuses validation-ranked selection.
 
 `comb` now accepts `--engine auto|builtin|custom`. `auto` remains the default
 and routes next-bar targets to the builtin engine and richer Rust targets such

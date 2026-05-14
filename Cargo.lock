@@ -419,6 +419,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "barsmith_bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "barsmith_rs",
+ "chrono",
+ "clap",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "barsmith_builtin"
 version = "0.1.0"
 dependencies = [
@@ -440,12 +454,10 @@ dependencies = [
  "clap",
  "csv",
  "custom_rs",
- "hex",
  "libc",
  "plotters",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tempfile",
  "tracing",
  "tracing-appender",

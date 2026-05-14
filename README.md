@@ -266,7 +266,7 @@ Common local gate:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
-cargo doc --workspace --no-deps --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 scripts/golden_smoke.sh
 scripts/benchmark_smoke.sh
 ```
@@ -329,6 +329,17 @@ This uses the AWS CLI (`aws s3 cp`) and does not embed AWS credentials logic in 
 
 Internal benchmark (not a guarantee): on a MacBook Pro (Apple M4), Barsmith explored ~120B combination candidates over ~5 days.
 
+Use the Rust-native benchmark gate for performance-sensitive changes:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite smoke \
+  --samples 21 \
+  --out target/barsmith-bench/current.json
+```
+
+Compare against a same-machine baseline with `barsmith_bench compare --fail-on-regression`.
+
 Performance depends heavily on:
 - feature catalog size and depth
 - `--stats-detail` (`core` vs `full`)
@@ -349,6 +360,7 @@ caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.cs
 - `barsmith_rs/`: core library (data loading, combination enumeration, evaluation, storage).
 - `barsmith_builtin/`: minimal built-in feature engineering + targets (used by the default CLI).
 - `barsmith_cli/`: CLI (`comb`, `eval-formulas`, and `results`).
+- `barsmith_bench/`: Rust-native benchmark runner and regression comparison gate.
 - `custom_rs/`: richer Rust feature engineering + targets used by `--engine custom` and by `--engine auto` for non-builtin targets.
 - `tests/`: repository-level fixtures used by smoke tests.
 - `benchmarks/`: benchmark fixture manifest docs and local smoke commands.

@@ -239,7 +239,7 @@ barsmith_cli results \
 
 This command reads `cumulative.duckdb` plus `results_parquet/` and prints the top combinations by `calmar-ratio` or `total-return`.
 
-Use `--export-formulas <FILE>` to write the query result as a ranked formula file that can be passed directly to `eval-formulas`. For holdout-safe research, export from a `comb` run that only searched the discovery/pre window. Formula exports include comment metadata and a research note; the formula parser ignores those comments. The command also writes `formula_export_manifest.json` by default, or the path passed to `--export-formula-manifest`.
+Use `--export-formulas <FILE>` to write the query result as a ranked formula file that can be passed directly to `eval-formulas`. For holdout-safe research, export from a `comb` run that only searched the discovery/pre window. Formula exports include comment metadata and a research note; the formula parser ignores those comments. The command also writes `formula_export_manifest.json` by default, or the path passed to `--export-formula-manifest`. Manifest schema version `2` uses `source_output_dir_path_sha256` for the source path fingerprint.
 
 Pass `--research-protocol <FILE>` when exporting formulas for strict validation. Strict `eval-formulas` requires the manifest `protocol_sha256` to match the research protocol used for validation or lockbox evaluation.
 
@@ -262,4 +262,4 @@ barsmith_cli protocol init \
   --candidate-top-k 1000
 ```
 
-Use `protocol validate --protocol research_protocol.json` for a machine check and `protocol explain --protocol research_protocol.json` for a readable summary.
+Use `protocol validate --protocol research_protocol.json` for a strict machine check and `protocol explain --protocol research_protocol.json` for a readable summary. Validation enforces schema version, `strict=true`, valid window ordering, and non-overlapping discovery/validation/lockbox windows.

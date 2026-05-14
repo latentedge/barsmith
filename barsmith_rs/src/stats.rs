@@ -29,6 +29,53 @@ thread_local! {
     static SORTED_RETURNS_BUFFER: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
 }
 
+#[cfg(feature = "bench-api")]
+pub fn benchmark_core_statistics_fixture(rows: usize) -> Vec<f64> {
+    (0..rows)
+        .map(|idx| match idx % 11 {
+            0 => 2.0,
+            1 | 2 => 1.0,
+            3 => 0.5,
+            4 | 5 => -0.75,
+            6 => -1.25,
+            _ => 0.25,
+        })
+        .collect()
+}
+
+#[cfg(feature = "bench-api")]
+pub fn benchmark_core_statistics_checksum(rows: usize, repeats: usize) -> f64 {
+    let returns = benchmark_core_statistics_fixture(rows);
+    benchmark_core_statistics_checksum_for_returns(&returns, repeats)
+}
+
+#[cfg(feature = "bench-api")]
+pub fn benchmark_core_statistics_checksum_for_returns(returns: &[f64], repeats: usize) -> f64 {
+    let mut checksum = 0.0;
+    for _ in 0..repeats {
+        let summary = compute_statistics(
+            3,
+            returns.len(),
+            returns.len() / 2,
+            Some(returns),
+            None,
+            returns.len(),
+            StatsDetail::Core,
+            PositionSizingMode::Fractional,
+            None,
+            Some(0.0),
+            Some(100_000.0),
+            Some(1.0),
+            Some(1.0),
+            1,
+            None,
+            None,
+        );
+        checksum += summary.total_return + summary.max_drawdown + summary.final_capital;
+    }
+    checksum
+}
+
 #[derive(Clone)]
 pub struct EvaluationContext {
     data: Arc<ColumnarData>,

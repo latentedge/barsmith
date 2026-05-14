@@ -8,7 +8,6 @@ use barsmith_rs::protocol::{
     validate_protocol_binding, write_json_pretty,
 };
 use barsmith_rs::storage::{ResultQuery, ResultRankBy, ResultRow, query_result_store};
-use sha2::{Digest, Sha256};
 
 use crate::cli::ResultsArgs;
 
@@ -124,8 +123,8 @@ fn write_formula_export_header(text: &mut String, query: &ResultQuery, exported_
         "# Research note: export from a discovery/pre-only run. If the source run includes the intended post or lockbox window, later evaluation is contaminated.\n",
     );
     text.push_str(&format!(
-        "# source_output_dir_sha256: {}\n",
-        sha256_text(&query.output_dir.display().to_string())
+        "# source_output_dir_path_sha256: {}\n",
+        protocol_sha256_text(&query.output_dir.display().to_string())
     ));
     text.push_str(&format!("# direction: {}\n", query.direction));
     text.push_str(&format!("# target: {}\n", query.target));
@@ -177,7 +176,9 @@ fn build_formula_export_manifest(
 
     Ok(FormulaExportManifest::from_draft(
         FormulaExportManifestDraft {
-            source_output_dir_sha256: protocol_sha256_text(&query.output_dir.display().to_string()),
+            source_output_dir_path_sha256: protocol_sha256_text(
+                &query.output_dir.display().to_string(),
+            ),
             source_run_manifest_sha256: source_manifest_sha,
             source_run_identity_hash,
             source_date_start,
@@ -195,12 +196,6 @@ fn build_formula_export_manifest(
             protocol_sha256: protocol.map(ResearchProtocol::hash).transpose()?,
         },
     ))
-}
-
-fn sha256_text(text: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(text.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 fn f2(value: f64) -> String {

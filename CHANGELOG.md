@@ -27,6 +27,12 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Documented first-party unsafe Rust usage and review policy.
 - Upgraded the Polars/DuckDB dependency stack, removed the transitive `fast-float` RustSec warning, tightened Polars features, and documented the remaining cargo-audit exception for inactive optional Polars `bincode` metadata.
 - Runs the RustSec security workflow on push and pull requests in addition to the weekly schedule.
+- Added the Rust-native `barsmith_bench` runner and comparison gate for structured performance evidence.
+- Added hard-gate comparison checks for missing benchmark baselines/candidates, mean-corroborated p95 regression policy, and benchmarked the release profile while keeping the existing ThinLTO default.
+- Kept benchmark regression policies and statuses typed internally while preserving the same JSON strings.
+- Split standard-output planning, record schemas, closeout writing, checksum generation, helpers, and Markdown reports into focused modules.
+- Hardened `protocol validate` so it enforces strict schema and non-overlapping research windows.
+- Versioned formula-export manifests to schema `2` and renamed the source path fingerprint to `source_output_dir_path_sha256`.
 
 ## 0.1.0
 

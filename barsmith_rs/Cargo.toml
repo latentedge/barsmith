@@ -9,6 +9,7 @@ readme = "../README.md"
 rust-version = "1.85.1"
 
 [features]
+bench-api = []
 simd-eval = []
 
 [dependencies]

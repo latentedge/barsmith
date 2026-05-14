@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
 pub const PROTOCOL_SCHEMA_VERSION: u32 = 1;
-pub const FORMULA_EXPORT_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const FORMULA_EXPORT_MANIFEST_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -130,7 +130,7 @@ impl ResearchProtocol {
 pub struct FormulaExportManifest {
     pub schema_version: u32,
     pub created_at: String,
-    pub source_output_dir_sha256: String,
+    pub source_output_dir_path_sha256: String,
     pub source_run_manifest_sha256: Option<String>,
     pub source_run_identity_hash: Option<String>,
     pub source_date_start: Option<NaiveDate>,
@@ -150,7 +150,7 @@ pub struct FormulaExportManifest {
 
 #[derive(Debug, Clone)]
 pub struct FormulaExportManifestDraft {
-    pub source_output_dir_sha256: String,
+    pub source_output_dir_path_sha256: String,
     pub source_run_manifest_sha256: Option<String>,
     pub source_run_identity_hash: Option<String>,
     pub source_date_start: Option<NaiveDate>,
@@ -173,7 +173,7 @@ impl FormulaExportManifest {
         Self {
             schema_version: FORMULA_EXPORT_MANIFEST_SCHEMA_VERSION,
             created_at: Utc::now().to_rfc3339(),
-            source_output_dir_sha256: draft.source_output_dir_sha256,
+            source_output_dir_path_sha256: draft.source_output_dir_path_sha256,
             source_run_manifest_sha256: draft.source_run_manifest_sha256,
             source_run_identity_hash: draft.source_run_identity_hash,
             source_date_start: draft.source_date_start,
@@ -229,23 +229,9 @@ pub fn validate_strict_research_inputs(
     let protocol = protocol.ok_or_else(|| {
         anyhow!("--strict-protocol requires --research-protocol so stage windows are auditable")
     })?;
+    validate_protocol(protocol)?;
     let protocol_hash = protocol.hash()?;
     validate_protocol_binding(protocol, target, None)?;
-    if protocol.discovery.overlaps(&protocol.validation) {
-        return Err(anyhow!(
-            "research protocol discovery and validation windows overlap"
-        ));
-    }
-    if protocol.validation.overlaps(&protocol.lockbox) {
-        return Err(anyhow!(
-            "research protocol validation and lockbox windows overlap"
-        ));
-    }
-    if protocol.discovery.overlaps(&protocol.lockbox) {
-        return Err(anyhow!(
-            "research protocol discovery and lockbox windows overlap"
-        ));
-    }
 
     let mut warnings = Vec::new();
     match stage {
@@ -300,18 +286,7 @@ pub fn validate_protocol_binding(
     target: &str,
     direction: Option<&str>,
 ) -> Result<()> {
-    if protocol.schema_version != PROTOCOL_SCHEMA_VERSION {
-        return Err(anyhow!(
-            "research protocol schema_version {} is unsupported; expected {}",
-            protocol.schema_version,
-            PROTOCOL_SCHEMA_VERSION
-        ));
-    }
-    if !protocol.strict {
-        return Err(anyhow!(
-            "strict eval requires a research protocol with strict=true"
-        ));
-    }
+    validate_protocol(protocol)?;
     if protocol.target != target {
         return Err(anyhow!(
             "research protocol target '{}' does not match evaluation target '{}'",
@@ -332,6 +307,56 @@ pub fn validate_protocol_binding(
                 direction
             ));
         }
+    }
+    Ok(())
+}
+
+pub fn validate_protocol(protocol: &ResearchProtocol) -> Result<()> {
+    if protocol.schema_version != PROTOCOL_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "research protocol schema_version {} is unsupported; expected {}",
+            protocol.schema_version,
+            PROTOCOL_SCHEMA_VERSION
+        ));
+    }
+    if !protocol.strict {
+        return Err(anyhow!(
+            "strict eval requires a research protocol with strict=true"
+        ));
+    }
+    validate_window_order("discovery", &protocol.discovery)?;
+    validate_window_order("validation", &protocol.validation)?;
+    validate_window_order("lockbox", &protocol.lockbox)?;
+    validate_non_overlapping_windows(protocol)?;
+    Ok(())
+}
+
+fn validate_window_order(label: &str, window: &ResearchWindow) -> Result<()> {
+    if let (Some(start), Some(end)) = (window.start, window.end) {
+        if start > end {
+            return Err(anyhow!(
+                "research protocol {label} window start {start} is after end {end}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_non_overlapping_windows(protocol: &ResearchProtocol) -> Result<()> {
+    if protocol.discovery.overlaps(&protocol.validation) {
+        return Err(anyhow!(
+            "research protocol discovery and validation windows overlap"
+        ));
+    }
+    if protocol.validation.overlaps(&protocol.lockbox) {
+        return Err(anyhow!(
+            "research protocol validation and lockbox windows overlap"
+        ));
+    }
+    if protocol.discovery.overlaps(&protocol.lockbox) {
+        return Err(anyhow!(
+            "research protocol discovery and lockbox windows overlap"
+        ));
     }
     Ok(())
 }
@@ -488,7 +513,7 @@ mod tests {
 
     fn manifest(source_end: NaiveDate) -> FormulaExportManifest {
         FormulaExportManifest::from_draft(FormulaExportManifestDraft {
-            source_output_dir_sha256: "source".to_string(),
+            source_output_dir_path_sha256: "source".to_string(),
             source_run_manifest_sha256: Some("run".to_string()),
             source_run_identity_hash: Some("identity".to_string()),
             source_date_start: Some(d(2024, 1, 1)),
@@ -532,6 +557,29 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("discovery and validation"));
+    }
+
+    #[test]
+    fn protocol_validation_rejects_non_strict_files() {
+        let mut protocol = protocol();
+        protocol.strict = false;
+
+        let err = validate_protocol(&protocol).unwrap_err();
+
+        assert!(err.to_string().contains("strict=true"));
+    }
+
+    #[test]
+    fn protocol_validation_rejects_deserialized_bad_window_order() {
+        let mut protocol = protocol();
+        protocol.discovery = ResearchWindow {
+            start: Some(d(2024, 7, 1)),
+            end: Some(d(2024, 6, 30)),
+        };
+
+        let err = validate_protocol(&protocol).unwrap_err();
+
+        assert!(err.to_string().contains("start 2024-07-01 is after end"));
     }
 
     #[test]

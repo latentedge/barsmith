@@ -10,7 +10,7 @@ Run this before opening a behavior-changing PR:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
-cargo doc --workspace --no-deps --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 cargo audit --deny warnings
 ```
 
@@ -56,6 +56,7 @@ scripts/benchmark_smoke.sh
 
 This is a small release-mode throughput check. Use it as a sanity gate, not as a stable benchmark.
 By default it uses normal Cargo build parallelism and all available Cargo build workers.
+It writes a structured JSON report through `barsmith_bench` at `target/barsmith-bench/benchmark-smoke.json`.
 
 On memory-constrained machines:
 
@@ -71,6 +72,22 @@ BARSMITH_BENCH_MAX_COMBOS=1000 \
 BARSMITH_BENCH_BATCH_SIZE=1000 \
 scripts/benchmark_smoke.sh
 ```
+
+For hot-path work, capture a baseline and compare explicitly:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite smoke \
+  --samples 21 \
+  --out target/barsmith-bench/baseline.json
+
+cargo run --release -p barsmith_bench -- compare \
+  --baseline target/barsmith-bench/baseline.json \
+  --candidate target/barsmith-bench/current.json \
+  --fail-on-regression
+```
+
+The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 
 ## Fixture tiers
 

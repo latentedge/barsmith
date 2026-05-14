@@ -19,7 +19,42 @@ The default Tier C references intentionally use relative examples from this work
 
 ## Benchmark Rule
 
-For hot-path changes, capture a baseline before the change and compare after the change on the same machine, toolchain, release profile, fixture, and command. Treat stable microbenchmark regressions as blockers. For noisy end-to-end runs, investigate median regressions above 3% or p95 regressions above 5%.
+For hot-path changes, capture a baseline before the change and compare after the change on the same machine, toolchain, release profile, fixture, and command. Treat stable microbenchmark regressions as blockers. For noisy end-to-end runs, investigate median regressions above 3% or p95 regressions above 5% and record the decision.
+
+## Rust Benchmark Tool
+
+Run the fast benchmark gate:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite smoke \
+  --samples 21 \
+  --out target/barsmith-bench/current.json
+```
+
+Run the broader local suite:
+
+```bash
+cargo run --release -p barsmith_bench -- run \
+  --suite all \
+  --samples 7 \
+  --out target/barsmith-bench/all-current.json
+```
+
+Compare a candidate to a same-machine baseline:
+
+```bash
+cargo run --release -p barsmith_bench -- compare \
+  --baseline target/barsmith-bench/baseline.json \
+  --candidate target/barsmith-bench/current.json \
+  --fail-on-regression
+```
+
+Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.
+
+The report marks stable microbenchmarks as `hard-gate` and CLI end-to-end timings as `review-only`. `compare --fail-on-regression` fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes are surfaced for review instead of hard-failing the gate.
+
+Comparison deltas are relative to the baseline: negative means faster, positive means slower. Use the median as the primary signal, p95 for tail behavior, and mean to confirm whether a p95 spike is representative or just noise.
 
 ## Golden Smoke
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use barsmith_rs::protocol::{
     ResearchProtocol, ResearchProtocolDraft, ResearchWindow, load_json, parse_optional_date,
-    write_json_pretty,
+    validate_protocol, write_json_pretty,
 };
 
 use crate::cli::{ProtocolCommand, ProtocolInitArgs, ProtocolValidateArgs};
@@ -43,8 +43,9 @@ fn init(args: ProtocolInitArgs) -> Result<()> {
 
 fn validate(args: ProtocolValidateArgs) -> Result<()> {
     let protocol: ResearchProtocol = load_json(&args.protocol)?;
+    validate_protocol(&protocol)?;
     println!(
-        "Research protocol is valid JSON: {}",
+        "Research protocol is valid and strict: {}",
         args.protocol.display()
     );
     println!("Protocol SHA-256: {}", protocol.hash()?);

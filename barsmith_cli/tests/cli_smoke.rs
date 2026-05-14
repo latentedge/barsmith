@@ -328,9 +328,9 @@ fn cli_eval_formulas_strict_protocol_writes_overfit_and_stress_reports() {
         &formula_manifest,
         format!(
             r#"{{
-  "schema_version": 1,
+  "schema_version": 2,
   "created_at": "2026-05-14T00:00:00Z",
-  "source_output_dir_sha256": "source",
+  "source_output_dir_path_sha256": "source",
   "source_run_manifest_sha256": null,
   "source_run_identity_hash": null,
   "source_date_start": "2024-12-29",

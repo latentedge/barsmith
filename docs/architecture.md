@@ -5,6 +5,7 @@ This page describes Barsmith’s supported Rust workflows at a high level.
 ## Crates
 
 - `barsmith_cli`: CLI entrypoint (`comb`, `eval-formulas`, `results`)
+- `barsmith_bench`: Rust-native benchmark runner and regression comparison gate
 - `barsmith_builtin`: minimal built-in feature engineering + target labeling used by the default CLI
 - `barsmith_rs`: core library (dataset loading, combination enumeration, evaluation, storage)
 - `custom_rs`: example/advanced engine (not required by the default CLI)
@@ -55,6 +56,13 @@ Resume is index-based and protected by `run_manifest.json`, which binds the outp
 - `batch_tuning`: pure auto-batch heuristic and tests.
 - `subset_pruning`: depth-2 dead-pair cache and background snapshot saver.
 - `storage`: Parquet/DuckDB persistence, resume metadata, and top-results queries.
+- `barsmith_cli::standard_output`: public entrypoints for standard run folders, registry records, and closeout artifacts.
+- `barsmith_cli::standard_output::checksums`: artifact checksum generation.
+- `barsmith_cli::standard_output::closeout`: run manifests, summaries, registry records, and lockbox attempt tracking.
+- `barsmith_cli::standard_output::helpers`: path, timestamp, JSON, and metric serialization helpers.
+- `barsmith_cli::standard_output::plan`: run-path planning and default output-path wiring.
+- `barsmith_cli::standard_output::records`: typed JSON record schemas for command, manifest, and registry files.
+- `barsmith_cli::standard_output::reports`: human-readable forward-test, selection, overfit, stress, and lockbox Markdown reports.
 - `formula`: ranked formula parsing and clause normalization.
 - `formula_eval`: prepared-dataset formula evaluation, FRS wiring, and equity-curve row generation.
 - `selection`: pre/post candidate selection policy and decision reports.

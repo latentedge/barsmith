@@ -133,7 +133,9 @@ Add `--export-formulas formulas.txt` to write the query as a ranked formula file
 for `eval-formulas`. Use a discovery/pre-only source run when the exported file
 will feed a holdout confirmation. The export includes comment metadata and a
 research note; `eval-formulas` ignores those comments. The command also writes
-`formula_export_manifest.json` for strict protocol validation.
+`formula_export_manifest.json` for strict protocol validation. Manifest schema
+version `2` uses `source_output_dir_path_sha256` to make clear that this value
+hashes the source output directory path string, not directory contents.
 
 You can also query `cumulative.duckdb` with DuckDB’s CLI:
 

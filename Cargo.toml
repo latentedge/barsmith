@@ -3,7 +3,8 @@ members = [
     "barsmith_rs",
     "barsmith_cli",
     "barsmith_builtin",
-    "custom_rs"
+    "custom_rs",
+    "barsmith_bench"
 ]
 default-members = [
     "barsmith_rs",

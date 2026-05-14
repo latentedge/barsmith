@@ -1,6 +1,8 @@
 pub mod asset;
 pub mod backtest;
 mod batch_tuning;
+#[cfg(feature = "bench-api")]
+pub mod benchmark;
 mod bitset;
 pub mod combinator;
 pub mod config;

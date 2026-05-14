@@ -24,7 +24,10 @@ Use this checklist for behavior-sensitive Barsmith changes.
 
 - Hot-path changes avoid per-combination allocation, string work, locks, and dynamic dispatch.
 - Before/after timing uses the same machine, toolchain, release profile, fixture, and command.
-- `scripts/benchmark_smoke.sh` passes, and larger Tier C benchmarks are recorded for hot-path refactors.
+- `scripts/benchmark_smoke.sh` passes and writes a structured `barsmith_bench` report.
+- Stable microbenchmark comparison passes, or the regression has an explicit accepted tradeoff.
+- Larger Tier C benchmarks are recorded for hot-path refactors.
+- Cargo profile/build-flag changes include profile-audit evidence and state whether the binary is native-optimized or portable.
 - SIMD/unsafe changes are isolated, documented with safety comments, and covered by scalar parity tests where practical.
 - Readability refactors keep tight loops small, measurable, and allocation-aware.
 

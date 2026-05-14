@@ -105,7 +105,7 @@ barsmith_cli protocol init \
   --candidate-top-k 1000
 ```
 
-Use `barsmith_cli protocol validate --protocol research_protocol.json` in CI or before long runs. Use `protocol explain` when reviewing a run folder.
+Use `barsmith_cli protocol validate --protocol research_protocol.json` in CI or before long runs. Validation rejects unsupported schema versions, `strict=false`, invalid window ordering, and overlapping discovery/validation/lockbox windows. Use `protocol explain` when reviewing a run folder.
 
 Strict `eval-formulas` requires:
 
@@ -114,7 +114,7 @@ Strict `eval-formulas` requires:
 - `--formula-export-manifest formula_export_manifest.json` from `results --export-formulas --research-protocol research_protocol.json`
 - a stage via `--stage validation|lockbox|live-shadow`
 
-Strict mode rejects unsupported protocol schema versions, protocol files with `strict=false`, target or direction mismatches, formula manifests without a matching `protocol_sha256`, and formula exports that overlap the validation or lockbox windows.
+Strict mode rejects unsupported protocol schema versions, protocol files with `strict=false`, overlapping stage windows, target or direction mismatches, formula manifests without a matching `protocol_sha256`, and formula exports that overlap the validation or lockbox windows.
 
 ## Overfit diagnostics
 
@@ -183,7 +183,7 @@ barsmith_cli results \
   --research-protocol research_protocol.json
 ```
 
-The exported file includes comment metadata and a research note. It also writes `formula_export_manifest.json`, which strict validation uses to reject contaminated candidate files. `eval-formulas` ignores comment lines, so the formula file remains directly runnable.
+The exported file includes comment metadata and a research note. It also writes `formula_export_manifest.json`, which strict validation uses to reject contaminated candidate files. Manifest schema version `2` names the path hash `source_output_dir_path_sha256` so it is clear that the value fingerprints the source path string, not the directory contents. `eval-formulas` ignores comment lines, so the formula file remains directly runnable.
 
 Run holdout confirmation:
 
