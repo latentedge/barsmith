@@ -83,6 +83,54 @@ fn cli_runs_on_sample_dataset() {
 }
 
 #[test]
+fn cli_rejects_direction_both_for_canonical_atr_stop_target() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("ohlcv_tiny.csv");
+    let temp_dir = tempdir().expect("temp run root");
+
+    let output = barsmith_cmd()
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "both",
+            "--target",
+            "2x_atr_tp_atr_stop",
+            "--position-sizing",
+            "fractional",
+            "--dataset-id",
+            "tiny sample",
+            "--run-id",
+            "both rejected",
+            "--max-depth",
+            "2",
+            "--min-samples",
+            "1",
+            "--dry-run",
+        ])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to spawn barsmith_cli");
+
+    assert!(
+        !output.status.success(),
+        "direction both should fail for canonical ATR-stop targets"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("--direction both is not supported"),
+        "unexpected output: {combined}"
+    );
+}
+
+#[test]
 fn cli_dry_run_prepares_larger_sample_dataset() {
     let sample_csv = workspace_root()
         .join("tests")
@@ -150,6 +198,75 @@ fn cli_dry_run_prepares_larger_sample_dataset() {
         "expected barsmith_prepared.csv at {}",
         output_dir.display()
     );
+}
+
+#[test]
+fn cli_custom_atr_stop_dry_run_writes_realized_risk_columns() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("ohlcv_tiny.csv");
+    let temp_dir = tempdir().expect("temp run root");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let output_dir = runs_root
+        .join("comb")
+        .join("2x_atr_tp_atr_stop")
+        .join("long")
+        .join("tiny_atr")
+        .join("risk_columns");
+
+    let status = barsmith_cmd()
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "long",
+            "--target",
+            "2x_atr_tp_atr_stop",
+            "--position-sizing",
+            "contracts",
+            "--asset",
+            "MES",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry dir"),
+            "--dataset-id",
+            "tiny atr",
+            "--run-id",
+            "risk columns",
+            "--max-depth",
+            "2",
+            "--min-samples",
+            "1",
+            "--batch-size",
+            "25",
+            "--workers",
+            "1",
+            "--max-combos",
+            "1",
+            "--dry-run",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn barsmith_cli");
+
+    assert!(status.success(), "barsmith_cli exited with {status:?}");
+    let prepared =
+        std::fs::read_to_string(output_dir.join("barsmith_prepared.csv")).expect("prepared csv");
+    let header = prepared.lines().next().expect("prepared header");
+    for column in [
+        "2x_atr_tp_atr_stop_risk",
+        "2x_atr_tp_atr_stop_risk_long",
+        "2x_atr_tp_atr_stop_risk_short",
+    ] {
+        assert!(
+            header.split(',').any(|name| name == column),
+            "prepared CSV should include {column}; header was {header}"
+        );
+    }
 }
 
 #[test]

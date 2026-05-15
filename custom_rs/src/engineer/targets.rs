@@ -159,6 +159,71 @@ enum HighlowOrAtrTpMode {
     RiskMultiple(f64),
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct TargetResolution {
+    pub(super) long: Vec<bool>,
+    pub(super) short: Vec<bool>,
+    pub(super) rr_long: Vec<f64>,
+    pub(super) rr_short: Vec<f64>,
+    pub(super) exit_i_long: Vec<Option<usize>>,
+    pub(super) exit_i_short: Vec<Option<usize>>,
+    risk_long: Option<Vec<f64>>,
+    risk_short: Option<Vec<f64>>,
+}
+
+type TargetTuple = (
+    Vec<bool>,
+    Vec<bool>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<Option<usize>>,
+    Vec<Option<usize>>,
+);
+
+impl TargetResolution {
+    fn new(len: usize, include_risk: bool) -> Self {
+        Self {
+            long: vec![false; len],
+            short: vec![false; len],
+            rr_long: vec![f64::NAN; len],
+            rr_short: vec![f64::NAN; len],
+            exit_i_long: vec![None; len],
+            exit_i_short: vec![None; len],
+            risk_long: include_risk.then(|| vec![f64::NAN; len]),
+            risk_short: include_risk.then(|| vec![f64::NAN; len]),
+        }
+    }
+
+    pub(super) fn take_risk_columns(&mut self) -> Option<(Vec<f64>, Vec<f64>)> {
+        Some((self.risk_long.take()?, self.risk_short.take()?))
+    }
+
+    #[cfg(test)]
+    pub(super) fn risk_long_values(&self) -> &[f64] {
+        self.risk_long
+            .as_deref()
+            .expect("target resolution should include long risk")
+    }
+
+    #[cfg(test)]
+    pub(super) fn risk_short_values(&self) -> &[f64] {
+        self.risk_short
+            .as_deref()
+            .expect("target resolution should include short risk")
+    }
+
+    fn into_targets_and_rr(self) -> TargetTuple {
+        (
+            self.long,
+            self.short,
+            self.rr_long,
+            self.rr_short,
+            self.exit_i_long,
+            self.exit_i_short,
+        )
+    }
+}
+
 fn highlow_or_atr_stop_long(entry: f64, low: f64, atr: f64, mode: HighlowOrAtrStopMode) -> f64 {
     match mode {
         HighlowOrAtrStopMode::Wide => low.min(entry - atr),
@@ -209,14 +274,8 @@ fn compute_highlow_or_atr_targets_and_rr_with_stop_mode(
     stop_mode: HighlowOrAtrStopMode,
     tp_mode: HighlowOrAtrTpMode,
     min_tp_rr: Option<f64>,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+    include_risk: bool,
+) -> TargetResolution {
     let requires_atr = matches!(
         stop_mode,
         HighlowOrAtrStopMode::Wide | HighlowOrAtrStopMode::AtrOnly | HighlowOrAtrStopMode::Tightest
@@ -226,14 +285,9 @@ fn compute_highlow_or_atr_targets_and_rr_with_stop_mode(
     if requires_atr {
         len = len.min(atr.len());
     }
-    let mut long = vec![false; len];
-    let mut short = vec![false; len];
-    let mut long_rr = vec![f64::NAN; len];
-    let mut short_rr = vec![f64::NAN; len];
-    let mut exit_i_long = vec![None; len];
-    let mut exit_i_short = vec![None; len];
+    let mut out = TargetResolution::new(len, include_risk);
     if len < 2 {
-        return (long, short, long_rr, short_rr, exit_i_long, exit_i_short);
+        return out;
     }
 
     let cutoff_horizon = resolve_end_idx.unwrap_or(len - 1).min(len - 1);
@@ -367,9 +421,12 @@ fn compute_highlow_or_atr_targets_and_rr_with_stop_mode(
             }
 
             if rr.is_finite() {
-                long_rr[idx] = rr;
-                long[idx] = hit_tp;
-                exit_i_long[idx] = exit_idx;
+                out.rr_long[idx] = rr;
+                out.long[idx] = hit_tp;
+                out.exit_i_long[idx] = exit_idx;
+                if let Some(risk_long) = out.risk_long.as_mut() {
+                    risk_long[idx] = risk;
+                }
             }
         } else {
             if !want_short {
@@ -461,14 +518,17 @@ fn compute_highlow_or_atr_targets_and_rr_with_stop_mode(
             }
 
             if rr.is_finite() {
-                short_rr[idx] = rr;
-                short[idx] = hit_tp;
-                exit_i_short[idx] = exit_idx;
+                out.rr_short[idx] = rr;
+                out.short[idx] = hit_tp;
+                out.exit_i_short[idx] = exit_idx;
+                if let Some(risk_short) = out.risk_short.as_mut() {
+                    risk_short[idx] = risk;
+                }
             }
         }
     }
 
-    (long, short, long_rr, short_rr, exit_i_long, exit_i_short)
+    out
 }
 
 pub(super) fn compute_highlow_or_atr_targets_and_rr(
@@ -480,14 +540,7 @@ pub(super) fn compute_highlow_or_atr_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -500,7 +553,9 @@ pub(super) fn compute_highlow_or_atr_targets_and_rr(
         HighlowOrAtrStopMode::Wide,
         HighlowOrAtrTpMode::AtrMultiple(2.0),
         None,
+        false,
     )
+    .into_targets_and_rr()
 }
 
 pub(super) fn compute_highlow_1r_targets_and_rr(
@@ -511,14 +566,7 @@ pub(super) fn compute_highlow_1r_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -531,10 +579,12 @@ pub(super) fn compute_highlow_1r_targets_and_rr(
         HighlowOrAtrStopMode::HighlowOnly,
         HighlowOrAtrTpMode::RiskMultiple(1.0),
         None,
+        false,
     )
+    .into_targets_and_rr()
 }
 
-pub(super) fn compute_2x_atr_tp_atr_stop_targets_and_rr(
+pub(super) fn compute_2x_atr_tp_atr_stop_target_resolution(
     open: &[f64],
     high: &[f64],
     low: &[f64],
@@ -543,14 +593,7 @@ pub(super) fn compute_2x_atr_tp_atr_stop_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetResolution {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -563,10 +606,12 @@ pub(super) fn compute_2x_atr_tp_atr_stop_targets_and_rr(
         HighlowOrAtrStopMode::AtrOnly,
         HighlowOrAtrTpMode::AtrMultiple(2.0),
         None,
+        true,
     )
 }
 
-pub(super) fn compute_3x_atr_tp_atr_stop_targets_and_rr(
+#[cfg(any(test, feature = "bench-api"))]
+pub(super) fn compute_2x_atr_tp_atr_stop_targets_and_rr(
     open: &[f64],
     high: &[f64],
     low: &[f64],
@@ -575,14 +620,30 @@ pub(super) fn compute_3x_atr_tp_atr_stop_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
+    compute_2x_atr_tp_atr_stop_target_resolution(
+        open,
+        high,
+        low,
+        close,
+        atr,
+        tick_size,
+        resolve_end_idx,
+        direction,
+    )
+    .into_targets_and_rr()
+}
+
+pub(super) fn compute_3x_atr_tp_atr_stop_target_resolution(
+    open: &[f64],
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    atr: &[f64],
+    tick_size: Option<f64>,
+    resolve_end_idx: Option<usize>,
+    direction: Direction,
+) -> TargetResolution {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -595,10 +656,12 @@ pub(super) fn compute_3x_atr_tp_atr_stop_targets_and_rr(
         HighlowOrAtrStopMode::AtrOnly,
         HighlowOrAtrTpMode::AtrMultiple(3.0),
         None,
+        true,
     )
 }
 
-pub(super) fn compute_atr_tp_atr_stop_targets_and_rr(
+#[cfg(test)]
+pub(super) fn compute_3x_atr_tp_atr_stop_targets_and_rr(
     open: &[f64],
     high: &[f64],
     low: &[f64],
@@ -607,14 +670,30 @@ pub(super) fn compute_atr_tp_atr_stop_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
+    compute_3x_atr_tp_atr_stop_target_resolution(
+        open,
+        high,
+        low,
+        close,
+        atr,
+        tick_size,
+        resolve_end_idx,
+        direction,
+    )
+    .into_targets_and_rr()
+}
+
+pub(super) fn compute_atr_tp_atr_stop_target_resolution(
+    open: &[f64],
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    atr: &[f64],
+    tick_size: Option<f64>,
+    resolve_end_idx: Option<usize>,
+    direction: Direction,
+) -> TargetResolution {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -627,7 +706,32 @@ pub(super) fn compute_atr_tp_atr_stop_targets_and_rr(
         HighlowOrAtrStopMode::AtrOnly,
         HighlowOrAtrTpMode::AtrMultiple(1.0),
         None,
+        true,
     )
+}
+
+#[cfg(test)]
+pub(super) fn compute_atr_tp_atr_stop_targets_and_rr(
+    open: &[f64],
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    atr: &[f64],
+    tick_size: Option<f64>,
+    resolve_end_idx: Option<usize>,
+    direction: Direction,
+) -> TargetTuple {
+    compute_atr_tp_atr_stop_target_resolution(
+        open,
+        high,
+        low,
+        close,
+        atr,
+        tick_size,
+        resolve_end_idx,
+        direction,
+    )
+    .into_targets_and_rr()
 }
 
 pub(super) fn compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr(
@@ -639,14 +743,7 @@ pub(super) fn compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -659,7 +756,9 @@ pub(super) fn compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr(
         HighlowOrAtrStopMode::HighlowOnly,
         HighlowOrAtrTpMode::AtrMultiple(2.0),
         Some(1.0),
+        false,
     )
+    .into_targets_and_rr()
 }
 
 pub(super) fn compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr(
@@ -671,14 +770,7 @@ pub(super) fn compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -691,7 +783,9 @@ pub(super) fn compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr(
         HighlowOrAtrStopMode::HighlowOnly,
         HighlowOrAtrTpMode::AtrMultiple(1.0),
         Some(1.0),
+        false,
     )
+    .into_targets_and_rr()
 }
 
 pub(super) fn compute_highlow_or_atr_tightest_stop_targets_and_rr(
@@ -703,14 +797,7 @@ pub(super) fn compute_highlow_or_atr_tightest_stop_targets_and_rr(
     tick_size: Option<f64>,
     resolve_end_idx: Option<usize>,
     direction: Direction,
-) -> (
-    Vec<bool>,
-    Vec<bool>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Option<usize>>,
-    Vec<Option<usize>>,
-) {
+) -> TargetTuple {
     compute_highlow_or_atr_targets_and_rr_with_stop_mode(
         open,
         high,
@@ -723,7 +810,9 @@ pub(super) fn compute_highlow_or_atr_tightest_stop_targets_and_rr(
         HighlowOrAtrStopMode::Tightest,
         HighlowOrAtrTpMode::AtrMultiple(2.0),
         None,
+        false,
     )
+    .into_targets_and_rr()
 }
 
 pub(super) fn compute_wicks_kf_targets_and_rr(
@@ -814,15 +903,6 @@ pub(super) fn compute_wicks_kf_targets_and_rr(
 mod tests {
     use super::*;
 
-    type TargetOutput = (
-        Vec<bool>,
-        Vec<bool>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<Option<usize>>,
-        Vec<Option<usize>>,
-    );
-
     #[test]
     fn target_resolution_matches_linear_oracle() {
         let (open, high, low, close, atr) = target_fixture(512);
@@ -872,7 +952,7 @@ mod tests {
                         );
                         let actual = compute_highlow_or_atr_targets_and_rr_with_stop_mode(
                             &open, &high, &low, &close, &atr, tick_size, cutoff, direction,
-                            stop_mode, tp_mode, min_tp_rr,
+                            stop_mode, tp_mode, min_tp_rr, true,
                         );
                         assert_target_output_eq(
                             &actual, &expected, stop_mode, tp_mode, direction, tick_size, cutoff,
@@ -1008,7 +1088,7 @@ mod tests {
         stop_mode: HighlowOrAtrStopMode,
         tp_mode: HighlowOrAtrTpMode,
         min_tp_rr: Option<f64>,
-    ) -> TargetOutput {
+    ) -> TargetResolution {
         let requires_atr = matches!(
             stop_mode,
             HighlowOrAtrStopMode::Wide
@@ -1020,14 +1100,9 @@ mod tests {
         if requires_atr {
             len = len.min(atr.len());
         }
-        let mut long = vec![false; len];
-        let mut short = vec![false; len];
-        let mut long_rr = vec![f64::NAN; len];
-        let mut short_rr = vec![f64::NAN; len];
-        let mut exit_i_long = vec![None; len];
-        let mut exit_i_short = vec![None; len];
+        let mut out = TargetResolution::new(len, true);
         if len < 2 {
-            return (long, short, long_rr, short_rr, exit_i_long, exit_i_short);
+            return out;
         }
 
         let cutoff_horizon = resolve_end_idx.unwrap_or(len - 1).min(len - 1);
@@ -1148,9 +1223,10 @@ mod tests {
                     }
                 }
                 if rr.is_finite() {
-                    long_rr[idx] = rr;
-                    long[idx] = hit_tp;
-                    exit_i_long[idx] = exit_idx;
+                    out.rr_long[idx] = rr;
+                    out.long[idx] = hit_tp;
+                    out.exit_i_long[idx] = exit_idx;
+                    out.risk_long.as_mut().expect("risk column")[idx] = risk;
                 }
             } else {
                 if !want_short {
@@ -1234,19 +1310,20 @@ mod tests {
                     }
                 }
                 if rr.is_finite() {
-                    short_rr[idx] = rr;
-                    short[idx] = hit_tp;
-                    exit_i_short[idx] = exit_idx;
+                    out.rr_short[idx] = rr;
+                    out.short[idx] = hit_tp;
+                    out.exit_i_short[idx] = exit_idx;
+                    out.risk_short.as_mut().expect("risk column")[idx] = risk;
                 }
             }
         }
 
-        (long, short, long_rr, short_rr, exit_i_long, exit_i_short)
+        out
     }
 
     fn assert_target_output_eq(
-        actual: &TargetOutput,
-        expected: &TargetOutput,
+        actual: &TargetResolution,
+        expected: &TargetResolution,
         stop_mode: HighlowOrAtrStopMode,
         tp_mode: HighlowOrAtrTpMode,
         direction: Direction,
@@ -1256,12 +1333,33 @@ mod tests {
         let case = format!(
             "stop_mode={stop_mode:?}, tp_mode={tp_mode:?}, direction={direction:?}, tick_size={tick_size:?}, cutoff={cutoff:?}"
         );
-        assert_eq!(actual.0, expected.0, "long labels differ for {case}");
-        assert_eq!(actual.1, expected.1, "short labels differ for {case}");
-        assert_float_vec_eq(&actual.2, &expected.2, "long_rr", &case);
-        assert_float_vec_eq(&actual.3, &expected.3, "short_rr", &case);
-        assert_eq!(actual.4, expected.4, "long exits differ for {case}");
-        assert_eq!(actual.5, expected.5, "short exits differ for {case}");
+        assert_eq!(actual.long, expected.long, "long labels differ for {case}");
+        assert_eq!(
+            actual.short, expected.short,
+            "short labels differ for {case}"
+        );
+        assert_float_vec_eq(&actual.rr_long, &expected.rr_long, "rr_long", &case);
+        assert_float_vec_eq(&actual.rr_short, &expected.rr_short, "rr_short", &case);
+        assert_float_vec_eq(
+            actual.risk_long_values(),
+            expected.risk_long_values(),
+            "risk_long",
+            &case,
+        );
+        assert_float_vec_eq(
+            actual.risk_short_values(),
+            expected.risk_short_values(),
+            "risk_short",
+            &case,
+        );
+        assert_eq!(
+            actual.exit_i_long, expected.exit_i_long,
+            "long exits differ for {case}"
+        );
+        assert_eq!(
+            actual.exit_i_short, expected.exit_i_short,
+            "short exits differ for {case}"
+        );
     }
 
     fn assert_float_vec_eq(actual: &[f64], expected: &[f64], name: &str, case: &str) {

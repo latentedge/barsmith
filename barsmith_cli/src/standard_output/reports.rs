@@ -6,6 +6,7 @@ use barsmith_rs::formula_eval::{FormulaEvaluationReport, FormulaResult};
 use barsmith_rs::protocol::sha256_text;
 
 use crate::cli::EvalFormulasArgs;
+use crate::target_semantics::{inferred_stop_distance_column, risk_model};
 
 use super::StandardOutputPlan;
 use super::helpers::{optional_metric, relative_to};
@@ -330,6 +331,23 @@ pub(super) fn write_forward_summary(
     summary.push_str(&format!(
         "- Position sizing: `{:?}`\n",
         args.position_sizing
+    ));
+    let position_sizing = args.position_sizing.to_mode();
+    let stop_distance_column =
+        if position_sizing == barsmith_rs::config::PositionSizingMode::Contracts {
+            args.stop_distance_column
+                .clone()
+                .or_else(|| inferred_stop_distance_column(&args.target))
+        } else {
+            None
+        };
+    summary.push_str(&format!(
+        "- Stop-distance column: `{}`\n",
+        stop_distance_column.as_deref().unwrap_or("n/a")
+    ));
+    summary.push_str(&format!(
+        "- Risk model: `{}`\n",
+        risk_model(position_sizing, stop_distance_column.as_deref())
     ));
     summary.push_str(&format!(
         "- Pre rows: `{}` | Post rows: `{}`\n",

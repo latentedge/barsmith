@@ -41,6 +41,9 @@ location without embedding raw data, local artifact paths, or formula text. The
 top metrics include both best Calmar and best total R so future audits are not
 locked to one ranking lens. Non-finite metrics are recorded as explicit strings
 such as `Inf`, `-Inf`, or `NaN`.
+Registry records also include the effective sizing metadata:
+`position_sizing`, `stop_distance_column`, `stop_distance_unit`, and
+`risk_model`.
 
 ## Resuming
 
@@ -55,6 +58,12 @@ Practical rules:
 - If you want to override the stored resume offset (start from a specific point), pass `--resume-from`.
 
 If `--run-id` is omitted, Barsmith creates `<UTC timestamp>_<git short sha>_<run slug>`.
+
+For ATR-stop contract sizing, changing between raw ATR sizing and realized
+target-risk sizing changes the run identity because `stop_distance_column`
+changes. Use a fresh `--run-id` when rerunning old raw-ATR experiments with the
+new realized-risk default, for example
+`pre_2024_12_31_refactor_tick_risk`.
 
 ## Prepared dataset overwrite (`--ack-new-df`)
 

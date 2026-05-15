@@ -1,9 +1,10 @@
 use super::{
     DerivedMetrics, FeatureEngineer, NEXT_BAR_SL_MULTIPLIER, PriceSeries, TickRoundMode,
     atr_close_to_close, candle_features, column_with_nans,
-    compute_2x_atr_tp_atr_stop_targets_and_rr, compute_3x_atr_tp_atr_stop_targets_and_rr,
-    compute_atr_tp_atr_stop_targets_and_rr, compute_highlow_1r_targets_and_rr,
-    compute_highlow_or_atr_targets_and_rr, compute_highlow_or_atr_tightest_stop_targets_and_rr,
+    compute_2x_atr_tp_atr_stop_target_resolution, compute_2x_atr_tp_atr_stop_targets_and_rr,
+    compute_3x_atr_tp_atr_stop_targets_and_rr, compute_atr_tp_atr_stop_targets_and_rr,
+    compute_highlow_1r_targets_and_rr, compute_highlow_or_atr_targets_and_rr,
+    compute_highlow_or_atr_tightest_stop_targets_and_rr,
     compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr,
     compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr, compute_next_bar_targets_and_rr,
     compute_wicks_kf_targets_and_rr, quantize_distance_to_tick, quantize_price_to_tick, streak,
@@ -403,6 +404,78 @@ fn two_x_atr_tp_atr_stop_long_uses_entry_minus_atr_only_for_stop() {
     assert!(!short[0]);
     assert!((rr_long[0] - 2.0).abs() < 1e-9, "got {}", rr_long[0]);
     assert!(rr_short[0].is_nan());
+}
+
+#[test]
+fn two_x_atr_tp_atr_stop_risk_uses_tick_rounded_stop_distance() {
+    let open = vec![100.0, 100.4];
+    let high = vec![100.2, 100.75];
+    let low = vec![99.9, 100.3];
+    let close = vec![100.1, 100.5];
+    let atr = vec![0.30, 0.30];
+
+    let target = compute_2x_atr_tp_atr_stop_target_resolution(
+        &open,
+        &high,
+        &low,
+        &close,
+        &atr,
+        Some(0.25),
+        None,
+        Direction::Long,
+    );
+
+    assert!(target.long[0]);
+    let risk_long = target.risk_long_values();
+    assert!(
+        (risk_long[0] - 0.35).abs() < 1e-9,
+        "expected risk from rounded stop, got {}",
+        risk_long[0]
+    );
+    assert!(
+        (risk_long[0] - atr[0]).abs() > 1e-9,
+        "risk should not fall back to raw ATR when tick rounding changes the stop"
+    );
+    assert!(
+        (target.rr_long[0] - ((100.75 - 100.1) / 0.35)).abs() < 1e-9,
+        "RR should use the same realized risk as contract sizing"
+    );
+}
+
+#[test]
+fn two_x_atr_tp_atr_stop_short_risk_uses_tick_rounded_stop_distance() {
+    let open = vec![100.2, 99.5];
+    let high = vec![100.2, 99.8];
+    let low = vec![100.0, 99.45];
+    let close = vec![100.1, 99.3];
+    let atr = vec![0.30, 0.30];
+
+    let target = compute_2x_atr_tp_atr_stop_target_resolution(
+        &open,
+        &high,
+        &low,
+        &close,
+        &atr,
+        Some(0.25),
+        None,
+        Direction::Short,
+    );
+
+    assert!(target.short[0]);
+    let risk_short = target.risk_short_values();
+    assert!(
+        (risk_short[0] - 0.40).abs() < 1e-9,
+        "expected risk from rounded stop, got {}",
+        risk_short[0]
+    );
+    assert!(
+        (risk_short[0] - atr[0]).abs() > 1e-9,
+        "risk should not fall back to raw ATR when tick rounding changes the stop"
+    );
+    assert!(
+        (target.rr_short[0] - ((100.1 - 99.5) / 0.40)).abs() < 1e-9,
+        "RR should use the same realized risk as contract sizing"
+    );
 }
 
 #[test]

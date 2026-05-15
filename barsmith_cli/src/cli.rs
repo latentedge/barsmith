@@ -5,6 +5,9 @@ use chrono::NaiveDate;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::stats_detail::StatsDetailValue;
+use crate::target_semantics::{
+    inferred_stop_distance_column, normalize_target, reject_ambiguous_direction,
+};
 use barsmith_rs::asset::find_asset;
 use barsmith_rs::config::{
     Config, Direction, EvalProfileMode, PositionSizingMode, ReportMetricsMode, StackingMode,
@@ -973,7 +976,7 @@ pub struct CombArgs {
     #[arg(long = "csv", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     pub csv_path: PathBuf,
 
-    /// Direction to analyze (long/short/both)
+    /// Direction to analyze. Canonical ATR-stop targets require long or short.
     #[arg(long, default_value = "long")]
     pub direction: DirectionValue,
 
@@ -1263,6 +1266,7 @@ impl CombArgs {
         let include_date_start = parse_optional_date(self.date_start.as_deref())?;
         let include_date_end = parse_optional_date(self.date_end.as_deref())?;
         let direction = self.direction.to_direction();
+        reject_ambiguous_direction(&self.target, direction)?;
         // Preset report modes pick their own size only when the user left
         // `--top-k` at the default.
         let report_top = match self.report_metrics {
@@ -1350,7 +1354,7 @@ impl CombArgs {
 
         let stop_distance_column = if matches!(position_sizing, PositionSizingMode::Contracts) {
             self.stop_distance_column
-                .or_else(|| infer_stop_distance_column(&self.target))
+                .or_else(|| inferred_stop_distance_column(&self.target))
         } else {
             None
         };
@@ -1387,11 +1391,7 @@ impl CombArgs {
             ));
         }
 
-        let target = if self.target == "atr_stop" {
-            "2x_atr_tp_atr_stop".to_string()
-        } else {
-            self.target
-        };
+        let target = normalize_target(&self.target);
 
         Ok(Config {
             input_csv: self.csv_path.clone(),
@@ -1462,15 +1462,6 @@ impl CombArgs {
                 names
             },
         })
-    }
-}
-
-fn infer_stop_distance_column(target: &str) -> Option<String> {
-    match target {
-        "2x_atr_tp_atr_stop" | "3x_atr_tp_atr_stop" | "atr_tp_atr_stop" | "atr_stop" => {
-            Some("atr".to_string())
-        }
-        _ => None,
     }
 }
 
@@ -2036,6 +2027,51 @@ mod tests {
         assert_eq!(
             config.report_top, 0,
             "report_top should be zero when reporting is disabled"
+        );
+    }
+
+    #[test]
+    fn contracts_infer_realized_risk_column_for_atr_stop_targets() {
+        let mut args = base_args();
+        args.target = "2x_atr_tp_atr_stop".to_string();
+        args.position_sizing = PositionSizingValue::Contracts;
+        args.asset = Some("MES".to_string());
+
+        let config = args.into_config(PathBuf::from("out")).expect("config");
+
+        assert_eq!(
+            config.stop_distance_column.as_deref(),
+            Some("2x_atr_tp_atr_stop_risk")
+        );
+    }
+
+    #[test]
+    fn explicit_stop_distance_column_overrides_atr_stop_inference() {
+        let mut args = base_args();
+        args.target = "atr_stop".to_string();
+        args.position_sizing = PositionSizingValue::Contracts;
+        args.asset = Some("MES".to_string());
+        args.stop_distance_column = Some("atr".to_string());
+
+        let config = args.into_config(PathBuf::from("out")).expect("config");
+
+        assert_eq!(config.target, "2x_atr_tp_atr_stop");
+        assert_eq!(config.stop_distance_column.as_deref(), Some("atr"));
+    }
+
+    #[test]
+    fn canonical_atr_stop_rejects_direction_both() {
+        let mut args = base_args();
+        args.target = "2x_atr_tp_atr_stop".to_string();
+        args.direction = DirectionValue::Both;
+
+        let err = args
+            .into_config(PathBuf::from("out"))
+            .expect_err("direction both should be rejected");
+        assert!(
+            err.to_string()
+                .contains("--direction both is not supported"),
+            "unexpected error: {err}"
         );
     }
 

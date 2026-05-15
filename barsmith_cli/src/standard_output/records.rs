@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use super::helpers::{serialize_metric, serialize_optional_metric};
 
-pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
+pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -77,6 +77,10 @@ pub(super) struct RegistryRecord<'a> {
     pub artifact_uri: Option<&'a str>,
     pub run_path: String,
     pub command_sha256: String,
+    pub position_sizing: String,
+    pub stop_distance_column: Option<&'a str>,
+    pub stop_distance_unit: String,
+    pub risk_model: &'static str,
     pub top_calmar: Option<TopResultRecord>,
     pub top_total_r: Option<TopResultRecord>,
     pub checksum_file: String,
@@ -98,6 +102,9 @@ pub(super) struct ForwardManifest<'a> {
     pub rr_column: Option<&'a str>,
     pub stacking_mode: String,
     pub position_sizing: String,
+    pub stop_distance_column: Option<&'a str>,
+    pub stop_distance_unit: String,
+    pub risk_model: &'static str,
     pub rank_by: String,
     pub frs_enabled: bool,
     pub frs_scope: String,
@@ -133,6 +140,10 @@ pub(super) struct ForwardRegistryRecord<'a> {
     pub command_sha256: String,
     pub prepared_sha256: String,
     pub formulas_sha256: String,
+    pub position_sizing: String,
+    pub stop_distance_column: Option<String>,
+    pub stop_distance_unit: String,
+    pub risk_model: &'static str,
     pub top_pre_calmar: Option<ForwardTopResultRecord>,
     pub top_post_ranked: Option<ForwardTopResultRecord>,
     pub top_post_total_r: Option<ForwardTopResultRecord>,

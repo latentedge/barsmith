@@ -25,16 +25,20 @@ use tracing::{info, warn};
 
 mod targets;
 
+#[cfg(any(test, feature = "bench-api"))]
+use targets::compute_2x_atr_tp_atr_stop_targets_and_rr;
 #[cfg(test)]
 use targets::{TickRoundMode, quantize_distance_to_tick, quantize_price_to_tick};
 use targets::{
-    compute_2x_atr_tp_atr_stop_targets_and_rr, compute_3x_atr_tp_atr_stop_targets_and_rr,
-    compute_atr_tp_atr_stop_targets_and_rr, compute_highlow_1r_targets_and_rr,
+    compute_2x_atr_tp_atr_stop_target_resolution, compute_3x_atr_tp_atr_stop_target_resolution,
+    compute_atr_tp_atr_stop_target_resolution, compute_highlow_1r_targets_and_rr,
     compute_highlow_or_atr_targets_and_rr, compute_highlow_or_atr_tightest_stop_targets_and_rr,
     compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr,
     compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr, compute_next_bar_targets_and_rr,
     compute_wicks_kf_targets_and_rr,
 };
+#[cfg(test)]
+use targets::{compute_3x_atr_tp_atr_stop_targets_and_rr, compute_atr_tp_atr_stop_targets_and_rr};
 
 const SMALL_DIVISOR: f64 = 1e-9;
 const BODY_SIZE_EPS: f64 = 1e-9;
@@ -1167,27 +1171,33 @@ impl FeatureEngineer {
             None
         };
 
-        let (long, short, rr_long, rr_short, exit_i_long, exit_i_short) =
-            compute_2x_atr_tp_atr_stop_targets_and_rr(
-                &open,
-                &high,
-                &low,
-                &close,
-                &atr_values,
-                config.tick_size,
-                resolve_end_idx,
-                config.direction,
-            );
+        let mut target = compute_2x_atr_tp_atr_stop_target_resolution(
+            &open,
+            &high,
+            &low,
+            &close,
+            &atr_values,
+            config.tick_size,
+            resolve_end_idx,
+            config.direction,
+        );
+        let (risk_long, risk_short) = target.take_risk_columns().with_context(|| {
+            format!("{TARGET_NAME} target resolution did not return realized risk columns")
+        })?;
 
-        self.replace_bool_column("2x_atr_tp_atr_stop_long", long)?;
-        self.replace_bool_column("2x_atr_tp_atr_stop_short", short)?;
-        self.replace_float_column("rr_long", rr_long)?;
-        self.replace_float_column("rr_short", rr_short)?;
-        let exit_i_long_i64: Vec<Option<i64>> = exit_i_long
+        self.replace_bool_column("2x_atr_tp_atr_stop_long", target.long)?;
+        self.replace_bool_column("2x_atr_tp_atr_stop_short", target.short)?;
+        self.replace_float_column("rr_long", target.rr_long)?;
+        self.replace_float_column("rr_short", target.rr_short)?;
+        self.replace_float_column("2x_atr_tp_atr_stop_risk_long", risk_long)?;
+        self.replace_float_column("2x_atr_tp_atr_stop_risk_short", risk_short)?;
+        let exit_i_long_i64: Vec<Option<i64>> = target
+            .exit_i_long
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
-        let exit_i_short_i64: Vec<Option<i64>> = exit_i_short
+        let exit_i_short_i64: Vec<Option<i64>> = target
+            .exit_i_short
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
@@ -1207,20 +1217,23 @@ impl FeatureEngineer {
         self.replace_bool_column("2x_atr_tp_atr_stop_eligible_long", eligible_long)?;
         self.replace_bool_column("2x_atr_tp_atr_stop_eligible_short", eligible_short)?;
 
-        let (target_source, rr_source, eligible_source, exit_source) = match config.direction {
-            Direction::Short => (
-                "2x_atr_tp_atr_stop_short",
-                "rr_short",
-                "2x_atr_tp_atr_stop_eligible_short",
-                "2x_atr_tp_atr_stop_exit_i_short",
-            ),
-            _ => (
-                "2x_atr_tp_atr_stop_long",
-                "rr_long",
-                "2x_atr_tp_atr_stop_eligible_long",
-                "2x_atr_tp_atr_stop_exit_i_long",
-            ),
-        };
+        let (target_source, rr_source, eligible_source, exit_source, risk_source) =
+            match config.direction {
+                Direction::Short => (
+                    "2x_atr_tp_atr_stop_short",
+                    "rr_short",
+                    "2x_atr_tp_atr_stop_eligible_short",
+                    "2x_atr_tp_atr_stop_exit_i_short",
+                    "2x_atr_tp_atr_stop_risk_short",
+                ),
+                _ => (
+                    "2x_atr_tp_atr_stop_long",
+                    "rr_long",
+                    "2x_atr_tp_atr_stop_eligible_long",
+                    "2x_atr_tp_atr_stop_exit_i_long",
+                    "2x_atr_tp_atr_stop_risk_long",
+                ),
+            };
 
         let mut target_series = self.frame.column(target_source)?.clone();
         target_series.rename(TARGET_NAME.into());
@@ -1237,6 +1250,10 @@ impl FeatureEngineer {
         let mut exit_series = self.frame.column(exit_source)?.clone();
         exit_series.rename("2x_atr_tp_atr_stop_exit_i".into());
         self.replace_series(exit_series)?;
+
+        let mut risk_series = self.frame.column(risk_source)?.clone();
+        risk_series.rename("2x_atr_tp_atr_stop_risk".into());
+        self.replace_series(risk_series)?;
         Ok(())
     }
 
@@ -1261,27 +1278,33 @@ impl FeatureEngineer {
             None
         };
 
-        let (long, short, rr_long, rr_short, exit_i_long, exit_i_short) =
-            compute_3x_atr_tp_atr_stop_targets_and_rr(
-                &open,
-                &high,
-                &low,
-                &close,
-                &atr_values,
-                config.tick_size,
-                resolve_end_idx,
-                config.direction,
-            );
+        let mut target = compute_3x_atr_tp_atr_stop_target_resolution(
+            &open,
+            &high,
+            &low,
+            &close,
+            &atr_values,
+            config.tick_size,
+            resolve_end_idx,
+            config.direction,
+        );
+        let (risk_long, risk_short) = target.take_risk_columns().with_context(|| {
+            format!("{TARGET_NAME} target resolution did not return realized risk columns")
+        })?;
 
-        self.replace_bool_column("3x_atr_tp_atr_stop_long", long)?;
-        self.replace_bool_column("3x_atr_tp_atr_stop_short", short)?;
-        self.replace_float_column("rr_long", rr_long)?;
-        self.replace_float_column("rr_short", rr_short)?;
-        let exit_i_long_i64: Vec<Option<i64>> = exit_i_long
+        self.replace_bool_column("3x_atr_tp_atr_stop_long", target.long)?;
+        self.replace_bool_column("3x_atr_tp_atr_stop_short", target.short)?;
+        self.replace_float_column("rr_long", target.rr_long)?;
+        self.replace_float_column("rr_short", target.rr_short)?;
+        self.replace_float_column("3x_atr_tp_atr_stop_risk_long", risk_long)?;
+        self.replace_float_column("3x_atr_tp_atr_stop_risk_short", risk_short)?;
+        let exit_i_long_i64: Vec<Option<i64>> = target
+            .exit_i_long
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
-        let exit_i_short_i64: Vec<Option<i64>> = exit_i_short
+        let exit_i_short_i64: Vec<Option<i64>> = target
+            .exit_i_short
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
@@ -1301,20 +1324,23 @@ impl FeatureEngineer {
         self.replace_bool_column("3x_atr_tp_atr_stop_eligible_long", eligible_long)?;
         self.replace_bool_column("3x_atr_tp_atr_stop_eligible_short", eligible_short)?;
 
-        let (target_source, rr_source, eligible_source, exit_source) = match config.direction {
-            Direction::Short => (
-                "3x_atr_tp_atr_stop_short",
-                "rr_short",
-                "3x_atr_tp_atr_stop_eligible_short",
-                "3x_atr_tp_atr_stop_exit_i_short",
-            ),
-            _ => (
-                "3x_atr_tp_atr_stop_long",
-                "rr_long",
-                "3x_atr_tp_atr_stop_eligible_long",
-                "3x_atr_tp_atr_stop_exit_i_long",
-            ),
-        };
+        let (target_source, rr_source, eligible_source, exit_source, risk_source) =
+            match config.direction {
+                Direction::Short => (
+                    "3x_atr_tp_atr_stop_short",
+                    "rr_short",
+                    "3x_atr_tp_atr_stop_eligible_short",
+                    "3x_atr_tp_atr_stop_exit_i_short",
+                    "3x_atr_tp_atr_stop_risk_short",
+                ),
+                _ => (
+                    "3x_atr_tp_atr_stop_long",
+                    "rr_long",
+                    "3x_atr_tp_atr_stop_eligible_long",
+                    "3x_atr_tp_atr_stop_exit_i_long",
+                    "3x_atr_tp_atr_stop_risk_long",
+                ),
+            };
 
         let mut target_series = self.frame.column(target_source)?.clone();
         target_series.rename(TARGET_NAME.into());
@@ -1331,6 +1357,10 @@ impl FeatureEngineer {
         let mut exit_series = self.frame.column(exit_source)?.clone();
         exit_series.rename("3x_atr_tp_atr_stop_exit_i".into());
         self.replace_series(exit_series)?;
+
+        let mut risk_series = self.frame.column(risk_source)?.clone();
+        risk_series.rename("3x_atr_tp_atr_stop_risk".into());
+        self.replace_series(risk_series)?;
         Ok(())
     }
 
@@ -1355,27 +1385,33 @@ impl FeatureEngineer {
             None
         };
 
-        let (long, short, rr_long, rr_short, exit_i_long, exit_i_short) =
-            compute_atr_tp_atr_stop_targets_and_rr(
-                &open,
-                &high,
-                &low,
-                &close,
-                &atr_values,
-                config.tick_size,
-                resolve_end_idx,
-                config.direction,
-            );
+        let mut target = compute_atr_tp_atr_stop_target_resolution(
+            &open,
+            &high,
+            &low,
+            &close,
+            &atr_values,
+            config.tick_size,
+            resolve_end_idx,
+            config.direction,
+        );
+        let (risk_long, risk_short) = target.take_risk_columns().with_context(|| {
+            format!("{TARGET_NAME} target resolution did not return realized risk columns")
+        })?;
 
-        self.replace_bool_column("atr_tp_atr_stop_long", long)?;
-        self.replace_bool_column("atr_tp_atr_stop_short", short)?;
-        self.replace_float_column("rr_long", rr_long)?;
-        self.replace_float_column("rr_short", rr_short)?;
-        let exit_i_long_i64: Vec<Option<i64>> = exit_i_long
+        self.replace_bool_column("atr_tp_atr_stop_long", target.long)?;
+        self.replace_bool_column("atr_tp_atr_stop_short", target.short)?;
+        self.replace_float_column("rr_long", target.rr_long)?;
+        self.replace_float_column("rr_short", target.rr_short)?;
+        self.replace_float_column("atr_tp_atr_stop_risk_long", risk_long)?;
+        self.replace_float_column("atr_tp_atr_stop_risk_short", risk_short)?;
+        let exit_i_long_i64: Vec<Option<i64>> = target
+            .exit_i_long
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
-        let exit_i_short_i64: Vec<Option<i64>> = exit_i_short
+        let exit_i_short_i64: Vec<Option<i64>> = target
+            .exit_i_short
             .into_iter()
             .map(|v| v.map(|idx| idx as i64))
             .collect();
@@ -1395,20 +1431,23 @@ impl FeatureEngineer {
         self.replace_bool_column("atr_tp_atr_stop_eligible_long", eligible_long)?;
         self.replace_bool_column("atr_tp_atr_stop_eligible_short", eligible_short)?;
 
-        let (target_source, rr_source, eligible_source, exit_source) = match config.direction {
-            Direction::Short => (
-                "atr_tp_atr_stop_short",
-                "rr_short",
-                "atr_tp_atr_stop_eligible_short",
-                "atr_tp_atr_stop_exit_i_short",
-            ),
-            _ => (
-                "atr_tp_atr_stop_long",
-                "rr_long",
-                "atr_tp_atr_stop_eligible_long",
-                "atr_tp_atr_stop_exit_i_long",
-            ),
-        };
+        let (target_source, rr_source, eligible_source, exit_source, risk_source) =
+            match config.direction {
+                Direction::Short => (
+                    "atr_tp_atr_stop_short",
+                    "rr_short",
+                    "atr_tp_atr_stop_eligible_short",
+                    "atr_tp_atr_stop_exit_i_short",
+                    "atr_tp_atr_stop_risk_short",
+                ),
+                _ => (
+                    "atr_tp_atr_stop_long",
+                    "rr_long",
+                    "atr_tp_atr_stop_eligible_long",
+                    "atr_tp_atr_stop_exit_i_long",
+                    "atr_tp_atr_stop_risk_long",
+                ),
+            };
 
         let mut target_series = self.frame.column(target_source)?.clone();
         target_series.rename(TARGET_NAME.into());
@@ -1425,6 +1464,10 @@ impl FeatureEngineer {
         let mut exit_series = self.frame.column(exit_source)?.clone();
         exit_series.rename("atr_tp_atr_stop_exit_i".into());
         self.replace_series(exit_series)?;
+
+        let mut risk_series = self.frame.column(risk_source)?.clone();
+        risk_series.rename("atr_tp_atr_stop_risk".into());
+        self.replace_series(risk_series)?;
         Ok(())
     }
 

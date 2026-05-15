@@ -110,6 +110,26 @@ fn no_stacking_selects_fewer_trades_than_stacking() {
 }
 
 #[test]
+fn contracts_require_realized_risk_column_by_default() {
+    let mut req = request(StackingMode::Stacking);
+    req.position_sizing = PositionSizingMode::Contracts;
+    req.stop_distance_column = Some("2x_atr_tp_atr_stop_risk".to_string());
+    req.asset = Some("MES".to_string());
+    req.point_value = Some(5.0);
+
+    let err = run_formula_evaluation(&req).expect_err("missing realized risk should fail");
+    let message = err.to_string();
+    assert!(
+        message.contains("2x_atr_tp_atr_stop_risk"),
+        "error should name the missing risk column: {message}"
+    );
+    assert!(
+        message.contains("--stop-distance-column atr"),
+        "error should explain the raw-ATR compatibility override: {message}"
+    );
+}
+
+#[test]
 fn equity_curve_export_uses_ranked_window_selection() {
     let req = request(StackingMode::NoStacking);
     let report = run_formula_evaluation(&req).unwrap();

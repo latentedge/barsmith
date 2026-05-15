@@ -157,6 +157,11 @@ impl EvaluationContext {
                     "Missing stop_distance_column in config for position_sizing=contracts. Provide --stop-distance-column (or use a target that infers it)."
                 )
             })?;
+            if !data.has_column(stop_col) {
+                return Err(anyhow!(
+                    "Prepared dataset is missing stop-distance column '{stop_col}' required for --position-sizing contracts. For ATR-stop targets, regenerate barsmith_prepared.csv so it includes realized risk columns, or explicitly pass --stop-distance-column atr to evaluate an old raw-ATR prepared CSV."
+                ));
+            }
             let stop_distance = load_float_vector(&data, stop_col)?;
             let multiplier = match stop_distance_unit {
                 StopDistanceUnit::Points => config.point_value.ok_or_else(|| {

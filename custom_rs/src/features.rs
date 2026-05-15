@@ -111,6 +111,9 @@ impl FeatureCatalog {
                 if declared_pair_set.contains(name) {
                     continue;
                 }
+                if is_target_output_column(name) {
+                    continue;
+                }
                 match series.dtype() {
                     DataType::Float32 | DataType::Float64 => {
                         if !is_binary_01_series(series) {
@@ -429,6 +432,9 @@ fn audit_boolean_coverage(df: &DataFrame) {
         if known.contains(name) {
             continue;
         }
+        if is_target_output_column(name) {
+            continue;
+        }
         match series.dtype() {
             DataType::Boolean => unexpected.push(name.to_string()),
             DataType::Int8
@@ -485,6 +491,9 @@ fn audit_continuous_coverage(df: &DataFrame) {
     for series in df.columns() {
         let name = series.name().as_str();
         if known_ranges.contains(name) {
+            continue;
+        }
+        if is_target_output_column(name) {
             continue;
         }
         match series.dtype() {
@@ -677,6 +686,49 @@ fn is_binary_01_series(series: &Column) -> bool {
         }
         _ => false,
     }
+}
+
+pub(crate) fn is_target_output_column(name: &str) -> bool {
+    if name == "rr_long" || name == "rr_short" || name.starts_with("rr_") {
+        return true;
+    }
+
+    const TARGET_BASES: &[&str] = &[
+        "next_bar_color_and_wicks",
+        "wicks_kf",
+        "highlow_or_atr",
+        "highlow_1r",
+        "2x_atr_tp_atr_stop",
+        "3x_atr_tp_atr_stop",
+        "atr_tp_atr_stop",
+        "highlow_sl_2x_atr_tp_rr_gt_1",
+        "highlow_sl_1x_atr_tp_rr_gt_1",
+        "highlow_or_atr_tightest_stop",
+        "highlow_or_atr_tighest_stop",
+        "tribar_4h_2atr",
+    ];
+
+    const TARGET_SUFFIXES: &[&str] = &[
+        "",
+        "_long",
+        "_short",
+        "_eligible",
+        "_eligible_long",
+        "_eligible_short",
+        "_exit_i",
+        "_exit_i_long",
+        "_exit_i_short",
+        "_risk",
+        "_risk_long",
+        "_risk_short",
+    ];
+
+    TARGET_BASES.iter().any(|base| {
+        name == *base
+            || name
+                .strip_prefix(base)
+                .is_some_and(|suffix| TARGET_SUFFIXES[1..].contains(&suffix))
+    })
 }
 
 const BOOLEAN_NOTE: &str = "See docs sections 3.4.1-3.4.5";
@@ -1242,5 +1294,32 @@ mod tests {
             names.contains(&"9ema"),
             "declared names should include at least one extra numeric feature"
         );
+    }
+
+    #[test]
+    fn target_output_columns_are_not_research_features() {
+        for name in [
+            "2x_atr_tp_atr_stop",
+            "2x_atr_tp_atr_stop_long",
+            "2x_atr_tp_atr_stop_risk",
+            "2x_atr_tp_atr_stop_risk_short",
+            "2x_atr_tp_atr_stop_exit_i",
+            "2x_atr_tp_atr_stop_eligible",
+            "rr_2x_atr_tp_atr_stop",
+            "rr_long",
+            "tribar_4h_2atr",
+        ] {
+            assert!(
+                is_target_output_column(name),
+                "{name} should be treated as target output metadata"
+            );
+        }
+
+        for name in ["atr_pct", "body_atr_ratio", "kf_atr", "close"] {
+            assert!(
+                !is_target_output_column(name),
+                "{name} should remain eligible as normal feature data"
+            );
+        }
     }
 }

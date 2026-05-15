@@ -1256,7 +1256,7 @@ fn validate_required_columns(data: &ColumnarData, request: &FormulaEvalRequest) 
         })?;
         if !data.has_column(stop_column) {
             return Err(anyhow!(
-                "prepared CSV is missing stop-distance column '{stop_column}'"
+                "prepared CSV is missing stop-distance column '{stop_column}'. For ATR-stop targets, regenerate barsmith_prepared.csv so it includes realized risk columns, or explicitly pass --stop-distance-column atr to evaluate an old raw-ATR prepared CSV."
             ));
         }
     }

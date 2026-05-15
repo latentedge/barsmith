@@ -188,3 +188,88 @@ fn format_direction(direction: Direction) -> String {
     }
     .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        EvalProfileMode, PositionSizingMode, ReportMetricsMode, StackingMode, StatsDetail,
+        StopDistanceUnit,
+    };
+    use std::path::PathBuf;
+
+    fn config_with_stop_distance_column(stop_distance_column: &str) -> Config {
+        Config {
+            input_csv: PathBuf::from("dummy.csv"),
+            source_csv: None,
+            direction: Direction::Long,
+            target: "2x_atr_tp_atr_stop".to_string(),
+            output_dir: PathBuf::from("out"),
+            max_depth: 2,
+            min_sample_size: 1,
+            min_sample_size_report: 1,
+            include_date_start: None,
+            include_date_end: None,
+            batch_size: 100,
+            n_workers: 1,
+            auto_batch: false,
+            resume_offset: 0,
+            explicit_resume_offset: false,
+            max_combos: None,
+            dry_run: false,
+            quiet: true,
+            report_metrics: ReportMetricsMode::Off,
+            report_top: 0,
+            force_recompute: false,
+            max_drawdown: 50.0,
+            max_drawdown_report: None,
+            min_calmar_report: None,
+            strict_min_pruning: true,
+            enable_subset_pruning: false,
+            enable_feature_pairs: false,
+            feature_pairs_limit: None,
+            catalog_hash: None,
+            stats_detail: StatsDetail::Core,
+            eval_profile: EvalProfileMode::Off,
+            eval_profile_sample_rate: 1,
+            s3_output: None,
+            s3_upload_each_batch: false,
+            capital_dollar: Some(100_000.0),
+            risk_pct_per_trade: Some(1.0),
+            equity_time_years: None,
+            asset: Some("MES".to_string()),
+            risk_per_trade_dollar: Some(1_000.0),
+            cost_per_trade_dollar: None,
+            cost_per_trade_r: None,
+            dollars_per_r: Some(1_000.0),
+            tick_size: Some(0.25),
+            stacking_mode: StackingMode::NoStacking,
+            position_sizing: PositionSizingMode::Contracts,
+            stop_distance_column: Some(stop_distance_column.to_string()),
+            stop_distance_unit: StopDistanceUnit::Points,
+            min_contracts: 1,
+            max_contracts: None,
+            point_value: Some(5.0),
+            tick_value: Some(1.25),
+            margin_per_contract_dollar: Some(2_000.0),
+            require_any_features: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn run_identity_changes_when_contract_risk_column_changes() {
+        let raw_atr =
+            config_run_identity_hash(&config_with_stop_distance_column("atr"), "same-csv-hash")
+                .expect("raw atr identity");
+        let realized_risk = config_run_identity_hash(
+            &config_with_stop_distance_column("2x_atr_tp_atr_stop_risk"),
+            "same-csv-hash",
+        )
+        .expect("realized risk identity");
+
+        assert_ne!(
+            raw_atr, realized_risk,
+            "raw ATR sizing and realized-risk sizing must not resume into the same run identity"
+        );
+    }
+}

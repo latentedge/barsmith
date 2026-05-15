@@ -41,10 +41,18 @@ runs/artifacts/
 Barsmith also writes a lightweight Git-trackable registry record under
 `runs/registry/comb/<target>/<direction>/<dataset-id>/<run-id>.json` by default.
 Registry records include IDs, Git SHA, command hash, portable run path, artifact
-URI, and best-Calmar and best-total-R metrics. They store a formula hash rather
-than formula text so private formulas do not need to be committed.
+URI, sizing metadata, and best-Calmar and best-total-R metrics. They store a
+formula hash rather than formula text so private formulas do not need to be
+committed.
 Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
 `NaN` rather than being silently converted to JSON `null`.
+
+Registry schema version `2` records `position_sizing`,
+`stop_distance_column`, `stop_distance_unit`, and `risk_model`. For ATR-stop
+contract-sized runs, `risk_model=realized_tick_rounded_target_risk` means the
+run used the target-generated risk column after tick rounding. Old explicit
+`--stop-distance-column atr` runs are recorded as
+`risk_model=raw_stop_distance_column`.
 
 `eval-formulas` and `select validate` use the same standard run-folder contract:
 
@@ -90,6 +98,9 @@ The matching registry record is written under
 Registry records hash formulas instead of embedding the formula text. Strict
 selection records include `workflow_status` so validation and lockbox evidence
 can be audited without reading terminal output.
+Forward-test manifests and registry records also include the effective
+stop-distance column and risk model, so validation results can be compared
+against discovery runs without relying on terminal output.
 
 Common forward-test outputs are:
 

@@ -24,6 +24,9 @@ use serde::Serialize;
 
 use crate::cli::EvalFormulasArgs;
 use crate::plot;
+use crate::target_semantics::{
+    inferred_stop_distance_column, normalize_target, reject_ambiguous_direction_label,
+};
 
 pub struct EvalRunResult {
     pub report: FormulaEvaluationReport,
@@ -150,6 +153,18 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
         .map(load_json)
         .transpose()?;
     let target = normalize_target(&args.target);
+    reject_ambiguous_direction_label(
+        &target,
+        protocol
+            .as_ref()
+            .and_then(|protocol| protocol.direction.as_deref()),
+    )?;
+    reject_ambiguous_direction_label(
+        &target,
+        formula_manifest
+            .as_ref()
+            .map(|manifest| manifest.direction.as_str()),
+    )?;
     let strict_protocol = Some(validate_strict_research_inputs(
         stage,
         args.strict_protocol,
@@ -165,7 +180,7 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
     let stop_distance_column = if position_sizing == PositionSizingMode::Contracts {
         args.stop_distance_column
             .clone()
-            .or_else(|| infer_stop_distance_column(&args.target))
+            .or_else(|| inferred_stop_distance_column(&args.target))
     } else {
         None
     };
@@ -426,23 +441,6 @@ fn resolve_market_inputs(args: &EvalFormulasArgs) -> Result<MarketInputs> {
         tick_value,
         margin_per_contract_dollar,
     })
-}
-
-fn normalize_target(target: &str) -> String {
-    if target == "atr_stop" {
-        "2x_atr_tp_atr_stop".to_string()
-    } else {
-        target.to_string()
-    }
-}
-
-fn infer_stop_distance_column(target: &str) -> Option<String> {
-    match target {
-        "2x_atr_tp_atr_stop" | "3x_atr_tp_atr_stop" | "atr_tp_atr_stop" | "atr_stop" => {
-            Some("atr".to_string())
-        }
-        _ => None,
-    }
 }
 
 fn print_report(report: &FormulaEvaluationReport, report_top: usize) {

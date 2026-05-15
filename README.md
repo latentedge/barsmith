@@ -135,6 +135,28 @@ artifacts remain ignored by Git; registry records are meant for future audit
 traceability without embedding local artifact paths or formula text. Combination
 registry records include both best Calmar and best total-R summaries.
 
+### Contract sizing for ATR-stop targets
+
+For `2x_atr_tp_atr_stop`, `3x_atr_tp_atr_stop`, and
+`atr_tp_atr_stop`, contract sizing defaults to the target-generated realized
+risk column, not raw `atr`.
+
+- `2x_atr_tp_atr_stop` uses `2x_atr_tp_atr_stop_risk`.
+- `3x_atr_tp_atr_stop` uses `3x_atr_tp_atr_stop_risk`.
+- `atr_tp_atr_stop` uses `atr_tp_atr_stop_risk`.
+- `atr_stop` remains an alias for `2x_atr_tp_atr_stop`.
+
+These columns represent the entry-to-stop distance after asset tick rounding.
+That keeps contract counts, fees, equity, drawdown, and Calmar aligned with the
+same risk used by the target/RR generator. Old prepared CSVs can still be
+evaluated with raw ATR only when you explicitly pass
+`--stop-distance-column atr`; treat those runs as a separate sizing model and
+use a new `--run-id` for realized-risk reruns.
+
+Run long and short searches separately. `--direction both` is rejected for the
+canonical ATR-stop targets because one target column cannot honestly represent a
+combined long+short strategy.
+
 ## Formula evaluation
 
 `eval-formulas` evaluates a ranked formula file against `barsmith_prepared.csv`:

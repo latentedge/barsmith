@@ -6,6 +6,7 @@ mod results;
 mod select;
 mod standard_output;
 mod stats_detail;
+mod target_semantics;
 
 use std::fs::OpenOptions;
 use std::path::PathBuf;

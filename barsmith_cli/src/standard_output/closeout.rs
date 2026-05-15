@@ -7,6 +7,7 @@ use barsmith_rs::formula_eval::{FormulaEvaluationReport, FormulaResult};
 use barsmith_rs::storage::{ResultQuery, ResultRankBy, ResultRow, query_result_store};
 
 use crate::cli::EvalFormulasArgs;
+use crate::target_semantics::{inferred_stop_distance_column, risk_model};
 
 use super::checksums::{
     sha256_bytes, sha256_file, sha256_text, write_checksums, write_forward_checksums,
@@ -90,6 +91,13 @@ pub fn write_closeout_files(plan: &StandardOutputPlan, config: &Config) -> Resul
             artifact_uri: plan.artifact_uri.as_deref(),
             run_path: path_for_json(&plan.run_path),
             command_sha256: sha256_bytes(plan.command_line.as_bytes()),
+            position_sizing: format!("{:?}", config.position_sizing),
+            stop_distance_column: config.stop_distance_column.as_deref(),
+            stop_distance_unit: format!("{:?}", config.stop_distance_unit),
+            risk_model: risk_model(
+                config.position_sizing,
+                config.stop_distance_column.as_deref(),
+            ),
             top_calmar: top_calmar
                 .as_ref()
                 .map(|row| top_result_record("stored results ordered by calmar_ratio", row)),
@@ -118,6 +126,9 @@ pub fn write_forward_closeout_files(
     let completed_at = now_iso();
     let prepared_sha256 = sha256_file(&args.prepared_path)?;
     let formulas_sha256 = sha256_file(&args.formulas_path)?;
+    let stop_distance_column = forward_stop_distance_column(args);
+    let position_sizing = args.position_sizing.to_mode();
+    let risk_model = risk_model(position_sizing, stop_distance_column.as_deref());
     let lockbox_attempt_number = lockbox_attempt_number(plan, args, report)?;
     let workflow_status = workflow_status(report, lockbox_attempt_number);
     let mut closeout_files = written_files.to_vec();
@@ -178,6 +189,10 @@ pub fn write_forward_closeout_files(
                 command_sha256: sha256_bytes(plan.command_line.as_bytes()),
                 prepared_sha256,
                 formulas_sha256,
+                position_sizing: format!("{:?}", position_sizing),
+                stop_distance_column: stop_distance_column.clone(),
+                stop_distance_unit: format!("{:?}", args.stop_distance_unit.to_mode()),
+                risk_model,
                 top_pre_calmar: report
                     .pre
                     .results
@@ -265,6 +280,8 @@ fn write_forward_manifest(
     formulas_sha256: &str,
     workflow_status: &str,
 ) -> Result<()> {
+    let stop_distance_column = forward_stop_distance_column(args);
+    let position_sizing = args.position_sizing.to_mode();
     let manifest = ForwardManifest {
         schema_version: REGISTRY_SCHEMA_VERSION,
         run_kind: RunKind::ForwardTest,
@@ -279,7 +296,10 @@ fn write_forward_manifest(
         formulas_sha256: formulas_sha256.to_string(),
         rr_column: args.rr_column.as_deref(),
         stacking_mode: format!("{:?}", args.stacking_mode),
-        position_sizing: format!("{:?}", args.position_sizing),
+        position_sizing: format!("{:?}", position_sizing),
+        stop_distance_column: stop_distance_column.as_deref(),
+        stop_distance_unit: format!("{:?}", args.stop_distance_unit.to_mode()),
+        risk_model: risk_model(position_sizing, stop_distance_column.as_deref()),
         rank_by: format!("{:?}", args.rank_by),
         frs_enabled: !args.no_frs,
         frs_scope: format!("{:?}", args.frs_scope),
@@ -314,6 +334,16 @@ fn write_forward_manifest(
             .map(|row| format!("{:?}", row.status)),
     };
     write_json_atomic(&plan.output_dir.join("run_manifest.json"), &manifest)
+}
+
+fn forward_stop_distance_column(args: &EvalFormulasArgs) -> Option<String> {
+    if args.position_sizing.to_mode() == barsmith_rs::config::PositionSizingMode::Contracts {
+        args.stop_distance_column
+            .clone()
+            .or_else(|| inferred_stop_distance_column(&args.target))
+    } else {
+        None
+    }
 }
 
 fn query_top_result(config: &Config, rank_by: ResultRankBy) -> Result<Option<ResultRow>> {
@@ -352,6 +382,21 @@ fn write_summary(
     if let Some(uri) = plan.artifact_uri.as_deref() {
         summary.push_str(&format!("- Artifact URI: `{uri}`\n"));
     }
+    summary.push_str(&format!(
+        "- Position sizing: `{:?}`\n",
+        config.position_sizing
+    ));
+    summary.push_str(&format!(
+        "- Stop-distance column: `{}`\n",
+        config.stop_distance_column.as_deref().unwrap_or("n/a")
+    ));
+    summary.push_str(&format!(
+        "- Risk model: `{}`\n",
+        risk_model(
+            config.position_sizing,
+            config.stop_distance_column.as_deref()
+        )
+    ));
     summary.push_str(&format!(
         "- Output directory: `{}`\n",
         plan.output_dir.display()

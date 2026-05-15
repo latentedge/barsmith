@@ -111,6 +111,15 @@ The comparison gate fails on hard-gate median regressions, p95 regressions corro
 
 The `smoke` benchmark suite covers the main stable hot paths: combination rank/unrank, index iteration, synthetic combination evaluation, gated bitset scans, and core stats. For combination-search performance work, run `--suite comb-eval` directly. For max-depth-5 work, also run `--suite comb-depth5`. For strict selection workflow changes, run `--suite select-validate`. For ATR/high-low target work, run `--suite target-generation`. Confirm large search changes with a Tier C CLI profile on local data.
 
+For target semantics changes that can affect sizing or overfit-resistant
+selection, run both targeted suites through the wrapper so same-machine
+baselines are applied when present:
+
+```bash
+BARSMITH_PERF_SUITE=target-generation scripts/performance_gate.sh
+BARSMITH_PERF_SUITE=select-validate scripts/performance_gate.sh
+```
+
 Example targeted benchmark runs:
 
 ```bash

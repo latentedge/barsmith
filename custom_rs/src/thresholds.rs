@@ -2,7 +2,7 @@ use std::collections::HashMap;
 #[cfg(test)]
 use std::path::Path;
 
-use crate::features::CONTINUOUS_FEATURES;
+use crate::features::{CONTINUOUS_FEATURES, is_target_output_column};
 use anyhow::{Context, Result, anyhow};
 use barsmith_rs::feature::{ComparisonOperator, ComparisonSpec, FeatureDescriptor};
 use polars::prelude::*;
@@ -82,6 +82,9 @@ fn generate_threshold_catalog_from_frame_and_ranges_json(
 
     for (feature, config) in ranges.iter() {
         if config.enabled == Some(false) {
+            continue;
+        }
+        if is_target_output_column(feature) {
             continue;
         }
         let Ok(series) = df.column(feature) else {
@@ -182,11 +185,10 @@ fn generate_threshold_catalog_from_frame_and_ranges_json(
         // Tiny synthetic fixtures may not have enough data for configured
         // thresholds. Emit one generic predicate so downstream code can still
         // exercise FeatureVsConstant behavior.
-        if let Some(series) = df
-            .columns()
-            .iter()
-            .find(|s| matches!(s.dtype(), DataType::Float32 | DataType::Float64))
-        {
+        if let Some(series) = df.columns().iter().find(|s| {
+            !is_target_output_column(s.name().as_str())
+                && matches!(s.dtype(), DataType::Float32 | DataType::Float64)
+        }) {
             if let Ok(values) = series.f64() {
                 let mut samples: Vec<f64> = values
                     .into_iter()
@@ -236,6 +238,13 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
         .collect();
     disabled.sort_unstable();
 
+    let mut target_outputs: Vec<&str> = ranges
+        .keys()
+        .map(String::as_str)
+        .filter(|name| is_target_output_column(name))
+        .collect();
+    target_outputs.sort_unstable();
+
     let json_keys: Vec<&str> = ranges
         .iter()
         .filter_map(|(name, cfg)| (cfg.enabled != Some(false)).then_some(name.as_str()))
@@ -245,7 +254,7 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
     let mut in_json_not_continuous: Vec<&str> = json_keys
         .iter()
         .copied()
-        .filter(|name| !continuous.contains(name))
+        .filter(|name| !continuous.contains(name) && !target_outputs.contains(name))
         .collect();
     let mut in_continuous_not_json: Vec<&str> = continuous
         .iter()
@@ -258,6 +267,15 @@ fn audit_feature_ranges_vs_continuous(ranges: &HashMap<String, RawRangeConfig>) 
             "feature_ranges.json entries disabled (no scalar thresholds will be generated for these):"
         );
         for name in &disabled {
+            info!("   - {}", name);
+        }
+    }
+
+    if !target_outputs.is_empty() {
+        info!(
+            "feature_ranges.json target-output entries ignored (target, RR, exit, eligibility, and risk columns are not research features):"
+        );
+        for name in &target_outputs {
             info!("   - {}", name);
         }
     }
@@ -507,6 +525,43 @@ mod tests {
         assert!(names.iter().all(|n| !n.starts_with("a>")));
         assert!(names.iter().any(|n| n == "b>0.0"));
         assert!(names.iter().any(|n| n == "b>1.0"));
+
+        let _ = fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn target_output_ranges_do_not_generate_thresholds() {
+        let tmp_dir = std::env::temp_dir();
+        let csv_path: PathBuf = tmp_dir.join(format!(
+            "barsmith_thresholds_target_output_test_{}.csv",
+            std::process::id()
+        ));
+        fs::write(
+            &csv_path,
+            "2x_atr_tp_atr_stop_risk,feature_ok\n0.25,0.0\n0.50,1.0\n0.75,2.0\n",
+        )
+        .expect("failed to write temp csv");
+
+        let ranges_json = r#"
+        {
+          "2x_atr_tp_atr_stop_risk": { "min": 0, "max": 1, "increment": 0.25, "operators": [">"], "description": "target risk" },
+          "feature_ok": { "min": 0, "max": 2, "increment": 1, "operators": [">"], "description": "feature" }
+        }
+        "#;
+
+        let catalog = generate_threshold_catalog_from_ranges_json(&csv_path, ranges_json)
+            .expect("failed to generate catalog");
+        let names: Vec<String> = catalog.descriptors.iter().map(|d| d.name.clone()).collect();
+        assert!(
+            names
+                .iter()
+                .all(|name| !name.starts_with("2x_atr_tp_atr_stop_risk")),
+            "target-output risk columns should not become scalar predicates"
+        );
+        assert!(
+            names.iter().any(|name| name.starts_with("feature_ok>")),
+            "normal configured features should still generate predicates"
+        );
 
         let _ = fs::remove_file(&csv_path);
     }

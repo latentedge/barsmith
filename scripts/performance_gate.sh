@@ -93,6 +93,11 @@ else
 fi
 
 build_args=(--release -p barsmith_bench)
+case "$SUITE" in
+  target-generation)
+    build_args+=(--features target-generation)
+    ;;
+esac
 needs_cli=false
 case "$SUITE" in
   all|comb-cli|results-cli|strict-eval|formula-eval|select-validate|selection-workflow)

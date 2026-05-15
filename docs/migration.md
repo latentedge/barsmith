@@ -35,6 +35,34 @@ Formula export now also writes `formula_export_manifest.json` by default. Strict
 and routes next-bar targets to the builtin engine and richer Rust targets such
 as `2x_atr_tp_atr_stop` to the custom engine.
 
+### ATR-stop contract sizing uses realized target risk
+
+Contract sizing for `2x_atr_tp_atr_stop`, `3x_atr_tp_atr_stop`,
+`atr_tp_atr_stop`, and the `atr_stop` alias now infers a target-generated
+realized risk column instead of raw `atr`.
+
+Old behavior:
+
+- inferred stop-distance column: `atr`
+- risk model: raw ATR proxy
+
+New behavior:
+
+- `2x_atr_tp_atr_stop` -> `2x_atr_tp_atr_stop_risk`
+- `3x_atr_tp_atr_stop` -> `3x_atr_tp_atr_stop_risk`
+- `atr_tp_atr_stop` -> `atr_tp_atr_stop_risk`
+- `atr_stop` -> `2x_atr_tp_atr_stop_risk`
+- risk model: entry-to-stop distance after asset tick rounding
+
+Old contract-sized runs and new realized-risk runs are not directly comparable.
+Regenerate `barsmith_prepared.csv` and use a fresh `--run-id` for new runs. To
+evaluate an old prepared CSV intentionally under raw ATR semantics, pass
+`--stop-distance-column atr` explicitly.
+
+`--direction both` is rejected for the canonical ATR-stop targets because the
+prepared dataset has one canonical target/RR/risk column. Run separate long and
+short searches instead.
+
 Unsupported formula modes are intentionally not carried forward. Translate any formula syntax outside boolean flags, feature-vs-constant comparisons, feature-vs-feature comparisons, and `&&` conjunctions before running.
 
 ### AND-only combination logic

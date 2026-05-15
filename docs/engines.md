@@ -53,6 +53,15 @@ Custom-engine targets currently include:
 - `highlow_or_atr_tightest_stop`
 - `tribar_4h_2atr`
 
+ATR-stop targets emit target-specific RR, eligibility, exit-index, and realized
+risk columns. The realized risk columns are computed from the same rounded stop
+used by target resolution, so `--position-sizing contracts --asset <CODE>` can
+size contracts from executable tick-rounded risk instead of raw ATR.
+
+Run long and short ATR-stop searches separately. `--direction both` remains
+useful in low-level tests, but the CLI rejects it for canonical ATR-stop runs
+because the prepared dataset has one canonical target/RR/risk column.
+
 If you want to bring your own feature engineering or targets, you have two main options:
 
 1. Use `barsmith_rs` as a library and provide your own “prepared dataset” that satisfies the contract in `docs/data-contract.md`.

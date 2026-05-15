@@ -214,7 +214,22 @@ override them explicitly:
 - `reports/overfit.md`, `reports/stress.md`, and `reports/lockbox.md` when applicable
 - `command.txt`, `command.json`, `run_manifest.json`, and `checksums.sha256`
 
-Contract sizing requires `--asset` and a stop-distance column. ATR-stop targets infer `--stop-distance-column atr`; other targets must provide the column explicitly.
+Contract sizing requires `--asset` and a stop-distance column. ATR-stop targets
+infer the realized target-risk column by default:
+
+- `2x_atr_tp_atr_stop` -> `2x_atr_tp_atr_stop_risk`
+- `3x_atr_tp_atr_stop` -> `3x_atr_tp_atr_stop_risk`
+- `atr_tp_atr_stop` -> `atr_tp_atr_stop_risk`
+- `atr_stop` -> `2x_atr_tp_atr_stop_risk`
+
+Those columns are generated after asset tick rounding, so contract sizing uses
+the same entry-to-stop risk as the RR calculation. To evaluate an old prepared
+CSV that only has raw ATR sizing, pass `--stop-distance-column atr` explicitly
+and keep that run separate from realized-risk reruns.
+
+`--direction both` is not supported for the canonical ATR-stop targets. Run
+separate `--direction long` and `--direction short` searches so the target, RR,
+eligibility, exit, and risk columns stay unambiguous.
 
 See `docs/selection.md` and `docs/research-protocol.md` for the recommended pre/post selection workflow and lockbox guidance.
 
