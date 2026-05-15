@@ -82,7 +82,7 @@ fn prepared_dataset_hash_mismatch_requires_ack() -> anyhow::Result<()> {
     fs::write(&csv_path, SAMPLE_DATA)?;
     let output_dir = temp_dir.path().join("output");
 
-    let config1 = base_config(&csv_path, &output_dir, "is_green");
+    let config1 = base_config(&csv_path, &output_dir, "highlow_or_atr");
     prepare_dataset_with_options(
         &config1,
         PrepareDatasetOptions {
@@ -91,7 +91,7 @@ fn prepared_dataset_hash_mismatch_requires_ack() -> anyhow::Result<()> {
         },
     )?;
 
-    let config2 = base_config(&csv_path, &output_dir, "next_bar_color_and_wicks");
+    let config2 = base_config(&csv_path, &output_dir, "wicks_kf");
     let err = prepare_dataset_with_options(
         &config2,
         PrepareDatasetOptions {

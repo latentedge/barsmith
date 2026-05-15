@@ -61,7 +61,7 @@ For forward tests, Barsmith can purge rows whose exit index leaves the filtered
 evaluation window. Keep exit indices in original row coordinates when writing a
 prepared dataset; Barsmith remaps them after date filtering or row slicing.
 
-For custom-engine `comb` runs, date filters are applied after the raw engineered
-dataset is prepared. The searchable feature catalog is then fitted from the
+For `comb` runs, date filters are applied after `custom_rs` prepares the raw
+engineered dataset. The searchable feature catalog is then fitted from the
 filtered evaluation window so scalar thresholds are not learned from rows
 outside the requested in-sample date range.

@@ -1,0 +1,12 @@
+[package]
+name = "barsmith_indicators"
+version = "0.1.0"
+edition = "2024"
+description = "Reusable, strategy-agnostic indicator math for Barsmith."
+license = "MIT"
+repository = "https://github.com/latentedge/barsmith"
+readme = "../README.md"
+rust-version = "1.85.1"
+publish = false
+
+[dependencies]

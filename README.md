@@ -22,8 +22,7 @@ Unstable. APIs, CLI flags, and output schemas may change without notice.
 Currently supported by the default CLI:
 - OHLCV CSV input.
 - AND-only feature combinations.
-- Builtin targets: `next_bar_up`, `next_bar_down`, and `next_bar_color_and_wicks`.
-- Custom-engine targets through `--engine auto|custom`, including `2x_atr_tp_atr_stop`.
+- Rust-native strategy/target preparation through `custom_rs`, including `next_bar_color_and_wicks` and ATR/high-low targets such as `2x_atr_tp_atr_stop`.
 - Ranked formula evaluation against an existing `barsmith_prepared.csv`.
 - Rust-native result querying, formula export, strict protocol manifests, overfit diagnostics, stress diagnostics, FRS exports, equity-curve exports, selection reports, and optional PNG plots.
 - Local filesystem outputs, with optional `aws s3 cp` uploads.
@@ -31,7 +30,7 @@ Currently supported by the default CLI:
 Not supported by the default CLI:
 - OR/mixed combination logic.
 - Broker connectivity, order routing, or live execution.
-- Arbitrary custom targets unless they are provided through a prepared dataset or implemented in a Rust engine.
+- Arbitrary custom targets unless they are provided through a prepared dataset or implemented in `custom_rs`.
 
 ## Key features
 
@@ -207,9 +206,9 @@ for the complete grammar, FRS options, and plotting flags.
 flowchart TD
   A["CLI: barsmith comb"] --> B["Parse args (clap)"]
   B --> C["CombArgs::into_config() -> Config"]
-  C --> D["barsmith_builtin::run_builtin_pipeline_with_options"]
+  C --> D["custom_rs::run_custom_pipeline_with_options"]
 
-  subgraph BuiltinEngine["Builtin engine (barsmith_builtin)"]
+  subgraph CustomRs["custom_rs strategy preparation"]
     D --> E["Prepare engineered dataset"]
     E --> E1["Read source CSV (OHLCV)"]
     E1 --> E2["Engineer features + label targets"]
@@ -252,9 +251,9 @@ The core pipeline (`barsmith_rs`) expects a “prepared” dataset that contains
 - `<target>_eligible` (optional) as a boolean gate for trade eligibility
 - `<target>_exit_i` (required when `--stacking-mode no-stacking`) as an integer next index to jump to after a trade
 
-The default CLI generates this prepared dataset via `barsmith_builtin` and writes it to `runs/artifacts/.../barsmith_prepared.csv`.
+The default CLI generates this prepared dataset via `custom_rs` and writes it to `runs/artifacts/.../barsmith_prepared.csv`.
 
-Note: the built-in CLI always writes `barsmith_prepared.csv`. If that file already exists in the run folder, you must pass `--ack-new-df` to overwrite it.
+Note: `comb` always writes `barsmith_prepared.csv`. If that file already exists in the run folder, you must pass `--ack-new-df` to overwrite it.
 
 ## Data format
 
@@ -264,16 +263,15 @@ Input must be a CSV with (at minimum) these columns:
 - `open`, `high`, `low`, `close` (numeric)
 - `volume` (numeric)
 
-The default CLI uses `barsmith_builtin` for feature engineering + target labeling, and currently supports:
+The default CLI uses `custom_rs` for feature engineering and target labeling.
+Supported targets include `next_bar_color_and_wicks`, `wicks_kf`,
+`highlow_or_atr`, `highlow_1r`, `2x_atr_tp_atr_stop`,
+`3x_atr_tp_atr_stop`, `atr_tp_atr_stop`,
+`highlow_sl_2x_atr_tp_rr_gt_1`, `highlow_sl_1x_atr_tp_rr_gt_1`,
+`highlow_or_atr_tightest_stop`, and `tribar_4h_2atr`.
 
-- `--target next_bar_up` (boolean)
-- `--target next_bar_down` (boolean)
-- `--target next_bar_color_and_wicks` (compatibility alias for `next_bar_up`)
-
-For richer feature sets/targets, use `--engine auto` (default) or
-`--engine custom` for targets implemented by `custom_rs`, including
-`2x_atr_tp_atr_stop`. You can also use `barsmith_rs` as a library and provide
-your own prepared dataset (see the requirements above).
+You can also use `barsmith_rs` as a library and provide your own prepared
+dataset that satisfies the contract above.
 
 ## Validation
 
@@ -302,7 +300,7 @@ see `docs/testing.md`, `docs/performance.md`, and `docs/review-checklist.md`.
 - `docs/runs.md`
 - `docs/outputs.md`
 - `docs/architecture.md`
-- `docs/engines.md`
+- `docs/targets.md`
 - `docs/performance.md`
 - `docs/unsafe.md`
 - `docs/testing.md`
@@ -387,7 +385,7 @@ Performance depends heavily on:
 
 ## Sample long-run command (macOS)
 
-This is an example command shape for a long local run with the default builtin target. It is macOS-specific (`caffeinate`) and this repo is marked unstable.
+This is an example command shape for a long local run. It is macOS-specific (`caffeinate`) and this repo is marked unstable.
 
 ```bash
 caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.csv --direction short --target next_bar_color_and_wicks --dataset-id es_30m_official_v2 --run-slug no_stacking --max-depth 5 --min-samples 4000 --date-end 2024-12-31 --feature-pairs --auto-batch --batch-size 8000000 --stats-detail core --report formula --top-k 10000 --max-drawdown 25 --max-drawdown-report 25 --min-calmar-report 1.0 --subset-pruning --asset MES --profile-eval off
@@ -396,10 +394,10 @@ caffeinate -dimsu cargo run --release -p barsmith_cli -- comb --csv ../es_30m.cs
 ## Project layout
 
 - `barsmith_rs/`: core library (data loading, combination enumeration, evaluation, storage).
-- `barsmith_builtin/`: minimal built-in feature engineering + targets (used by the default CLI).
-- `barsmith_cli/`: CLI (`comb`, `eval-formulas`, and `results`).
+- `barsmith_indicators/`: reusable Polars-free indicator and rolling-window math.
+- `barsmith_cli/`: CLI (`comb`, `eval-formulas`, `results`, `select`, and `protocol`).
 - `barsmith_bench/`: Rust-native benchmark runner and regression comparison gate.
-- `custom_rs/`: richer Rust feature engineering + targets used by `--engine custom` and by `--engine auto` for non-builtin targets.
+- `custom_rs/`: Rust feature engineering, target catalog, and strategy preparation used by `comb`.
 - `tests/`: repository-level fixtures used by smoke tests.
 - `benchmarks/`: benchmark fixture manifest docs and local smoke commands.
 - `docs/`: user, contributor, architecture, testing, and migration docs.

@@ -12,7 +12,7 @@ Barsmith is currently marked **unstable**. Expect breaking changes.
 - `docs/runs.md` — running long experiments (resume, standard run folders, batching)
 - `docs/outputs.md` — what gets written + how to query results (DuckDB/Parquet)
 - `docs/architecture.md` — crate layout + the `comb` pipeline at a high level
-- `docs/engines.md` — builtin engine vs custom engines / prepared datasets
+- `docs/targets.md` — `custom_rs` target catalog, shared indicators, and prepared datasets
 - `docs/performance.md` — performance knobs and build tips
 - `docs/unsafe.md` — first-party unsafe Rust inventory and review policy
 - `docs/testing.md` — local validation matrix and CI expectations

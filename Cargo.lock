@@ -434,22 +434,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "barsmith_builtin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "barsmith_rs",
- "polars",
- "polars-io",
- "tracing",
-]
-
-[[package]]
 name = "barsmith_cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "barsmith_builtin",
  "barsmith_rs",
  "chrono",
  "clap",
@@ -464,6 +452,10 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "barsmith_indicators"
+version = "0.1.0"
 
 [[package]]
 name = "barsmith_rs"
@@ -1087,6 +1079,7 @@ name = "custom_rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "barsmith_indicators",
  "barsmith_rs",
  "chrono",
  "hex",

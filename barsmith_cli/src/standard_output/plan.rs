@@ -202,7 +202,6 @@ mod tests {
             csv_path: PathBuf::from("data/ES 30m official.csv"),
             direction: DirectionValue::Long,
             target: "2x_atr_tp_atr_stop".to_string(),
-            engine: crate::cli::EngineValue::Auto,
             runs_root: PathBuf::from(crate::cli::DEFAULT_RUNS_ROOT),
             dataset_id: Some("ES 30m Official V2".to_string()),
             run_id: Some("Manual Run 01".to_string()),

@@ -11,7 +11,7 @@ This document covers only unsafe code written in this repository. It does not in
 | `barsmith_rs/src/bitset.rs` | `target_arch = "aarch64"` and `simd-eval` feature | NEON bitset scanning for combination evaluation. | AArch64 NEON intrinsics and pointer loads require `unsafe`. | Scalar bitset scanners in the same module. |
 | `barsmith_cli/src/main.rs` | All CLI builds | Reads the parent process ID for ancestor-process logging. | `libc::getppid()` is an FFI call. | If this helper fails later in the chain, ancestor logging degrades rather than affecting evaluation. |
 
-No first-party `unsafe` is currently present in `barsmith_builtin` or `custom_rs`.
+No first-party `unsafe` is currently present in `barsmith_indicators` or `custom_rs`.
 
 ## `barsmith_rs/src/bitset.rs`
 

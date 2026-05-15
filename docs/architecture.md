@@ -6,15 +6,17 @@ This page describes Barsmith’s supported Rust workflows at a high level.
 
 - `barsmith_cli`: CLI entrypoint (`comb`, `eval-formulas`, `results`, `select`, `protocol`)
 - `barsmith_bench`: Rust-native benchmark runner and regression comparison gate
-- `barsmith_builtin`: minimal built-in feature engineering + target labeling used by the default CLI
+- `barsmith_indicators`: reusable Polars-free indicator and rolling-window math
 - `barsmith_rs`: core library (dataset loading, combination enumeration, evaluation, storage)
-- `custom_rs`: example/advanced engine (not required by the default CLI)
+- `custom_rs`: feature engineering, target catalog, and strategy preparation used by `comb`
 
 ## High-level flow
 
 1. CLI parses flags and builds a `Config`.
-2. The builtin engine:
+2. `custom_rs` prepares the run:
    - reads the raw OHLCV CSV,
+   - computes reusable indicator features,
+   - labels the requested target from the target catalog,
    - writes `barsmith_prepared.csv` into the resolved run folder,
    - builds a feature catalog (`FeatureDescriptor`s) plus optional comparison predicates.
 3. The core pipeline (`barsmith_rs`) runs:
@@ -57,6 +59,15 @@ Resume is index-based and protected by `run_manifest.json`, which binds the run 
 - `batch_tuning`: pure auto-batch heuristic and tests.
 - `subset_pruning`: depth-2 dead-pair cache and background snapshot saver.
 - `storage`: Parquet/DuckDB persistence, resume metadata, and top-results queries.
+- `barsmith_indicators`: shared indicator kernels that remain independent from Polars and CLI/storage code.
+- `custom_rs`: strategy-facing feature engineering, target labeling, and feature-catalog generation.
+- `custom_rs::engineer`: preparation orchestration and DataFrame mutation.
+- `custom_rs::engineer::feature_blocks`: a small facade over feature
+  assembly modules for candles, derived metrics, oscillators, trend/Kalman
+  state, volatility, price extraction, and warmup policy.
+- `custom_rs::engineer::prepare`, `backtest`, `io`, and `hashing`: persistence, legacy backtest glue, column extraction, and prepared-CSV hash checks.
+- `custom_rs::features`: feature-catalog orchestration, with focused modules for curated definitions, pairwise predicates, audit logging, pruning, and series-kind detection.
+- `custom_rs::targets::registry`: canonical target metadata, default target risk columns, and target-output column detection.
 - `barsmith_cli::standard_output`: public entrypoints for standard run folders, registry records, and closeout artifacts.
 - `barsmith_cli::standard_output::checksums`: artifact checksum generation.
 - `barsmith_cli::standard_output::closeout`: run manifests, summaries, registry records, and lockbox attempt tracking.
@@ -114,7 +125,26 @@ Large test modules live beside their production modules instead of inside the pr
 
 - `barsmith_rs/src/stats/tests.rs`
 - `custom_rs/src/engineer/tests.rs`
+- `custom_rs/src/features/tests.rs`
 
 This keeps production code easier to scan while preserving access to private module helpers for focused unit tests.
 
-The advanced example engine also keeps target/RR geometry in `custom_rs/src/engineer/targets.rs`, separate from CSV loading, feature generation, and prepared-dataset persistence.
+Target metadata lives in `custom_rs/src/targets/<target-id>/`, with the
+central registry in `custom_rs/src/targets/registry.rs`. Shared stop/target
+geometry is exposed through `custom_rs/src/targets/common/barrier.rs`; its
+implementation is split into `targets/common/barrier/` modules for tick
+rounding, target-resolution storage, next-bar targets, and high-low/ATR
+geometry. Reusable indicator math belongs in `barsmith_indicators` so new
+targets can reuse it without depending on Polars, CLI, or storage APIs.
+
+The preparation layer is split by responsibility: `custom_rs/src/engineer.rs`
+keeps the orchestration and final DataFrame mutations, while the
+`custom_rs/src/engineer/` submodules hold feature blocks, IO helpers, hashing,
+standard dataset preparation, and legacy backtest support. Feature assembly is
+split again under `custom_rs/src/engineer/feature_blocks/` so indicator groups
+can be reviewed without scrolling through one large preparation file.
+
+The feature catalog follows the same pattern. `custom_rs/src/features.rs`
+stays as the small public entrypoint, while `custom_rs/src/features/` owns the
+curated definitions, pairwise catalog rules, dataset-audit logs, duplicate and
+constant pruning, and boolean/numeric series classification.

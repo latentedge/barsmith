@@ -411,5 +411,5 @@ fn resume_with_metadata_but_no_parquet_is_safe() -> Result<()> {
 }
 
 // Coverage helpers that reasoned about "complete depths" via DuckDB have
-// been removed from the engine. Depth and resume behaviour is now exercised
+// been removed from the pipeline. Depth and resume behaviour is now exercised
 // via the pipeline_integration tests rather than CumulativeStore helpers.

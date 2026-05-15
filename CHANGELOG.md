@@ -22,7 +22,8 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Added holdout-aware formula selection artifacts (`selection_report.json`, `selection_decisions.csv`, `selected_formulas.txt`, and `reports/selection.md`) with pre-ranked/post-confirmed defaults.
 - Added `results --export-formulas` for feeding stored combination results directly into `eval-formulas`, with metadata comments that call out the discovery/pre-only requirement for holdout-safe research.
 - Added strict research protocol manifests, formula-export provenance sidecars, validation/lockbox/live-shadow stages, lockbox rerun tracking, overfit diagnostics, and execution stress reports.
-- Added `comb --engine auto|builtin|custom`, with `auto` routing richer Rust targets such as `2x_atr_tp_atr_stop` to the custom engine.
+- Removed the split preparation model and made `custom_rs` the single supported `comb` strategy/target path.
+- Added `barsmith_indicators` for reusable Polars-free indicator and rolling-window math shared by `custom_rs` targets.
 - Split large private unit-test modules out of production files to improve maintainability without changing runtime behavior.
 - Expanded open-source documentation for stability, testing, performance review, migration, and contributor workflows.
 - Documented first-party unsafe Rust usage and review policy.
@@ -44,4 +45,4 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 ## 0.1.0
 
-- Initial public-ready repository structure (CLI, core library, built-in feature engineering, CI).
+- Initial public-ready repository structure (CLI, core library, feature engineering, CI).

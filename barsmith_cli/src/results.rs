@@ -91,11 +91,7 @@ pub(crate) fn rank_by_label(rank_by: ResultRankBy) -> &'static str {
 }
 
 pub(crate) fn normalize_target(target: &str) -> String {
-    if target == "atr_stop" {
-        "2x_atr_tp_atr_stop".to_string()
-    } else {
-        target.to_string()
-    }
+    custom_rs::targets::registry::normalize_target(target)
 }
 
 fn print_result_row(rank: usize, row: &ResultRow) {

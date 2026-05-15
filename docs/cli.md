@@ -31,7 +31,6 @@ Use `comb` when you want Barsmith to engineer features, enumerate combinations, 
 - `--artifact-uri <URI>`: durable storage location recorded in command and registry metadata
 - `--checksum-artifacts`: include Parquet, DuckDB, and log files in `checksums.sha256`
 - `--target <NAME>`: target identifier
-- `--engine auto|builtin|custom`: feature-engineering engine. `auto` uses the builtin engine for next-bar targets and the custom engine for richer Rust targets.
 - `--direction long|short|both`: filter which side is evaluated
 
 Standard output is the default:
@@ -49,10 +48,9 @@ The generated registry record is safe for Git by design: it stores a portable
 run path, formula hash, and metrics, not local artifact paths, raw formula text,
 or run artifacts.
 
-Builtin-engine targets are `next_bar_up`, `next_bar_down`, and
-`next_bar_color_and_wicks`. Custom-engine targets include
-`next_bar_color_and_wicks`, `wicks_kf`, `highlow_or_atr`, `highlow_1r`,
-`2x_atr_tp_atr_stop`, `3x_atr_tp_atr_stop`, `atr_tp_atr_stop`,
+Supported `custom_rs` targets are `next_bar_color_and_wicks`, `wicks_kf`,
+`highlow_or_atr`, `highlow_1r`, `2x_atr_tp_atr_stop`,
+`3x_atr_tp_atr_stop`, `atr_tp_atr_stop`,
 `highlow_sl_2x_atr_tp_rr_gt_1`, `highlow_sl_1x_atr_tp_rr_gt_1`,
 `highlow_or_atr_tightest_stop`, and `tribar_4h_2atr`.
 
@@ -309,7 +307,6 @@ barsmith_cli protocol init \
   --dataset-id es_30m_official_v2 \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --engine custom \
   --discovery-end 2024-12-31 \
   --validation-start 2025-01-01 \
   --validation-end 2025-06-30 \

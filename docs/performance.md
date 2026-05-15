@@ -66,7 +66,6 @@ Then use a Tier C CLI profile only to confirm end-to-end behavior on your actual
 ```bash
 cargo run --release -p barsmith_cli -- comb \
   --csv /path/to/local-tier-c.csv \
-  --engine custom \
   --direction long \
   --target 2x_atr_tp_atr_stop \
   --runs-root target/barsmith-profile/candidate \
@@ -90,7 +89,7 @@ CLI profiles include feature engineering, pruning, Parquet/DuckDB writes, and OS
 
 ## Target-Generation Benchmark
 
-ATR/high-low targets are easy to break while optimizing because gap opens, same-bar stop/target touches, cutoff-capped exits, NaNs, and tick rounding all affect labels and R. Use the target-generation suite before changing `custom_rs/src/engineer/targets.rs`:
+ATR/high-low targets are easy to break while optimizing because gap opens, same-bar stop/target touches, cutoff-capped exits, NaNs, and tick rounding all affect labels and R. Use the target-generation suite before changing target resolution code in `custom_rs`:
 
 ```bash
 cargo run --release -p barsmith_bench --features target-generation -- run \

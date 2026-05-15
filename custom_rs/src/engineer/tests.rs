@@ -1,13 +1,16 @@
 use super::{
-    DerivedMetrics, FeatureEngineer, NEXT_BAR_SL_MULTIPLIER, PriceSeries, TickRoundMode,
-    atr_close_to_close, candle_features, column_with_nans,
-    compute_2x_atr_tp_atr_stop_target_resolution, compute_2x_atr_tp_atr_stop_targets_and_rr,
-    compute_3x_atr_tp_atr_stop_targets_and_rr, compute_atr_tp_atr_stop_targets_and_rr,
-    compute_highlow_1r_targets_and_rr, compute_highlow_or_atr_targets_and_rr,
-    compute_highlow_or_atr_tightest_stop_targets_and_rr,
+    DerivedMetrics, FeatureEngineer, PriceSeries, atr_close_to_close, candle_features,
+    column_with_nans, streak,
+};
+use crate::targets::common::attach::NEXT_BAR_SL_MULTIPLIER;
+use crate::targets::common::barrier::{
+    TickRoundMode, compute_2x_atr_tp_atr_stop_target_resolution,
+    compute_2x_atr_tp_atr_stop_targets_and_rr, compute_3x_atr_tp_atr_stop_targets_and_rr,
+    compute_atr_tp_atr_stop_targets_and_rr, compute_highlow_1r_targets_and_rr,
+    compute_highlow_or_atr_targets_and_rr, compute_highlow_or_atr_tightest_stop_targets_and_rr,
     compute_highlow_sl_1x_atr_tp_rr_gt_1_targets_and_rr,
     compute_highlow_sl_2x_atr_tp_rr_gt_1_targets_and_rr, compute_next_bar_targets_and_rr,
-    compute_wicks_kf_targets_and_rr, quantize_distance_to_tick, quantize_price_to_tick, streak,
+    compute_wicks_kf_targets_and_rr, quantize_distance_to_tick, quantize_price_to_tick,
 };
 use barsmith_rs::Direction;
 use polars::prelude::*;

@@ -158,3 +158,9 @@ Add or update tests when changing:
 - combination-evaluator gating, batch reuse, or stats accumulation,
 - target generation or feature catalog construction,
 - output schema, DuckDB views, or Parquet write behavior.
+
+For new targets, use `custom_rs/src/targets/TEMPLATE.md` as the checklist and
+add tests for direction restrictions, target/RR/exit/risk columns, and any
+domain-specific edge cases. ATR/high-low target geometry changes should run the
+`target-generation` benchmark suite in addition to the default performance
+gate.

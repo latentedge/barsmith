@@ -877,8 +877,12 @@ impl PermutationPipeline {
                 // Global enumeration cursor at the start of this batch,
                 // including any non-zero resume offset.
                 let batch_start_offset = tracker.processed() as u64;
+                let next_batch_size = tracker.next_batch_size(effective_batch_size);
+                if next_batch_size == 0 {
+                    break;
+                }
                 let enum_start = Instant::now();
-                if !batcher.fill_batch(&mut batch_buffer, effective_batch_size) {
+                if !batcher.fill_batch(&mut batch_buffer, next_batch_size) {
                     break;
                 }
                 let batch = &batch_buffer;

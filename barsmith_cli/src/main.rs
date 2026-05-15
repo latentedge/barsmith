@@ -13,8 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{Result, anyhow};
-use barsmith_builtin::{BuiltinPipelineOptions, run_builtin_pipeline_with_options};
-use cli::{Cli, Commands, EngineValue};
+use cli::{Cli, Commands};
 use custom_rs::{CustomPipelineOptions, run_custom_pipeline_with_options};
 use tracing_appender::non_blocking;
 use tracing_subscriber::{EnvFilter, prelude::*};
@@ -187,21 +186,6 @@ fn log_invocation(log_file: Option<&PathBuf>) {
     }
 }
 
-fn resolve_comb_engine(requested: EngineValue, target: &str) -> EngineValue {
-    match requested {
-        EngineValue::Auto if is_builtin_target(target) => EngineValue::Builtin,
-        EngineValue::Auto => EngineValue::Custom,
-        engine => engine,
-    }
-}
-
-fn is_builtin_target(target: &str) -> bool {
-    matches!(
-        target,
-        "next_bar_color_and_wicks" | "next_bar_up" | "next_bar_down"
-    )
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -219,26 +203,15 @@ fn main() -> Result<()> {
             standard_output::write_start_files(&output_plan)?;
 
             let ack_new_df = args.ack_new_df;
-            let requested_engine = args.engine;
             let config = args.into_config(output_plan.output_dir.clone())?;
-            let engine = resolve_comb_engine(requested_engine, &config.target);
-            tracing::info!(target = %config.target, requested_engine = ?requested_engine, engine = ?engine, "resolved comb engine");
-            let run_result = match engine {
-                EngineValue::Builtin => run_builtin_pipeline_with_options(
-                    config.clone(),
-                    BuiltinPipelineOptions { ack_new_df },
-                ),
-                EngineValue::Custom => run_custom_pipeline_with_options(
-                    config.clone(),
-                    CustomPipelineOptions {
-                        ack_new_df,
-                        drop_nan_rows_in_core: true,
-                    },
-                ),
-                EngineValue::Auto => {
-                    unreachable!("auto engine should be resolved before execution")
-                }
-            };
+            tracing::info!(target = %config.target, "running custom strategy preparation");
+            let run_result = run_custom_pipeline_with_options(
+                config.clone(),
+                CustomPipelineOptions {
+                    ack_new_df,
+                    drop_nan_rows_in_core: true,
+                },
+            );
 
             if run_result.is_ok() {
                 standard_output::write_closeout_files(&output_plan, &config)?;

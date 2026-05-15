@@ -2,7 +2,7 @@
 name = "custom_rs"
 version = "0.1.0"
 edition = "2024"
-description = "Built-in feature engineering and targets used by Barsmith (example implementation)."
+description = "Rust feature engineering and target preparation for Barsmith combination search."
 license = "MIT"
 repository = "https://github.com/latentedge/barsmith"
 readme = "../README.md"
@@ -14,6 +14,7 @@ bench-api = []
 
 [dependencies]
 barsmith_rs = { path = "../barsmith_rs" }
+barsmith_indicators = { path = "../barsmith_indicators" }
 anyhow = "1.0.102"
 polars = { version = "0.53", default-features = false, features = ["dtype-slim", "polars-parquet", "strings", "temporal"] }
 polars-io = { version = "0.53", default-features = false, features = ["csv", "parquet", "temporal"] }

@@ -1,5 +1,6 @@
 mod engineer;
 pub mod features;
+pub mod targets;
 mod thresholds;
 
 use anyhow::{Result, anyhow};

@@ -10,7 +10,7 @@ Barsmith writes `run_manifest.json` and prevents accidentally reusing a run fold
 
 ## “Missing required '<target>_exit_i' column for --stacking-mode no-stacking”
 
-`--stacking-mode no-stacking` requires an integer `<target>_exit_i` column in the prepared dataset. The builtin engine emits exit indices for its supported targets; custom targets must emit them too.
+`--stacking-mode no-stacking` requires an integer `<target>_exit_i` column in the prepared dataset. Targets implemented in `custom_rs` must emit that column when they are intended to support no-stacking evaluation.
 
 See `docs/data-contract.md`.
 

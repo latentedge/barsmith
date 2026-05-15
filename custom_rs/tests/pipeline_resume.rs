@@ -1,6 +1,7 @@
 use std::fs;
 use std::fs::File;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
 use anyhow::Result;
 use barsmith_rs::{Config, Direction, ReportMetricsMode};
@@ -8,6 +9,8 @@ use custom_rs::{CustomPipelineOptions, run_custom_pipeline_with_options};
 use polars::prelude::*;
 use polars_io::prelude::ParquetReader;
 use tempfile::tempdir;
+
+static PIPELINE_RESUME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 const SAMPLE_DATA: &str = "\
 timestamp,open,high,low,close,volume
@@ -57,7 +60,7 @@ fn base_config(csv_path: &Path, output_dir: &Path) -> Config {
         input_csv: csv_path.to_path_buf(),
         source_csv: Some(csv_path.to_path_buf()),
         direction: Direction::Long,
-        target: "is_green".to_string(),
+        target: "highlow_or_atr".to_string(),
         output_dir: output_dir.to_path_buf(),
         max_depth: 2,
         min_sample_size: 1,
@@ -120,8 +123,15 @@ fn run_pipeline_for_test(config: Config) -> Result<()> {
     )
 }
 
+fn lock_pipeline_resume_test() -> MutexGuard<'static, ()> {
+    PIPELINE_RESUME_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[test]
 fn feature_pairs_depth_two_then_one_preserves_results() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample_fp.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;
@@ -170,6 +180,7 @@ fn feature_pairs_depth_two_then_one_preserves_results() -> Result<()> {
 /// before existing results are touched.
 #[test]
 fn feature_pairs_toggle_after_zeros_causes_run_identity_mismatch() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample_fp_toggle.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;
@@ -226,6 +237,7 @@ fn feature_pairs_toggle_after_zeros_causes_run_identity_mismatch() -> Result<()>
 /// the run identity.
 #[test]
 fn feature_pairs_toggle_causes_run_identity_mismatch_error() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample_fp_same_depth.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;
@@ -279,6 +291,7 @@ fn feature_pairs_toggle_causes_run_identity_mismatch_error() -> Result<()> {
 
 #[test]
 fn feature_pairs_depth_two_extends_with_max_combos() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample_fp_max_combos.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;
@@ -296,6 +309,10 @@ fn feature_pairs_depth_two_extends_with_max_combos() -> Result<()> {
     assert!(
         rows_after_1 > 0,
         "expected some result rows after initial feature-pair depth-2 run with max_combos=8"
+    );
+    assert!(
+        rows_after_1 <= 8,
+        "max_combos should cap the initial run before a full batch overshoots the requested window"
     );
     assert_eq!(
         rows_after_1, unique_after_1,
@@ -326,6 +343,7 @@ fn feature_pairs_depth_two_extends_with_max_combos() -> Result<()> {
 /// run manifest before existing results can be mixed with a different catalog.
 #[test]
 fn pipeline_resume_feature_pairs_toggle_causes_run_identity_mismatch() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;
@@ -387,6 +405,7 @@ fn pipeline_resume_feature_pairs_toggle_causes_run_identity_mismatch() -> Result
 
 #[test]
 fn depth_one_completion_causes_skip_on_rerun() -> Result<()> {
+    let _guard = lock_pipeline_resume_test();
     let temp_dir = tempdir()?;
     let csv_path = temp_dir.path().join("sample.csv");
     fs::write(&csv_path, SAMPLE_DATA)?;

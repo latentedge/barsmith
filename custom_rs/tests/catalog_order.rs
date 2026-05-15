@@ -13,7 +13,7 @@ fn make_config(csv_path: &Path, output_dir: &Path, enable_feature_pairs: bool) -
         input_csv: csv_path.to_path_buf(),
         source_csv: Some(csv_path.to_path_buf()),
         direction: Direction::Long,
-        target: "is_green".to_string(),
+        target: "highlow_or_atr".to_string(),
         output_dir: output_dir.to_path_buf(),
         max_depth: 2,
         min_sample_size: 1,

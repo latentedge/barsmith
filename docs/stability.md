@@ -9,9 +9,9 @@ Until a stable release:
 - CLI flags may be removed when they are unsupported or misleading.
 - Output schemas may change with migration notes.
 - Run folders are protected by `run_manifest.json`, but old folders without a manifest must be recreated or forced.
-- The default CLI supports only documented builtin targets.
+- The default CLI supports only documented `custom_rs` targets.
 
-The project prefers explicit breakage over accepting flags that imply behavior the engine does not implement.
+The project prefers explicit breakage over accepting flags that imply behavior the evaluator does not implement.
 
 ## Supported surface
 

@@ -100,7 +100,6 @@ barsmith_cli protocol init \
   --dataset-id es_30m_official_v2 \
   --target 2x_atr_tp_atr_stop \
   --direction long \
-  --engine custom \
   --discovery-start 2020-01-01 \
   --discovery-end 2024-12-31 \
   --validation-start 2025-01-01 \

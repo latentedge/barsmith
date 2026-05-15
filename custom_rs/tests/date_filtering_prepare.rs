@@ -47,7 +47,7 @@ fn prepare_dataset_does_not_apply_date_start_and_end_filters() -> Result<()> {
         input_csv: csv_path.clone(),
         source_csv: Some(csv_path),
         direction: Direction::Long,
-        target: "is_green".to_string(),
+        target: "highlow_or_atr".to_string(),
         output_dir: output_dir.clone(),
         max_depth: 1,
         min_sample_size: 1,

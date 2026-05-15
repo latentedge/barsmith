@@ -31,15 +31,15 @@ Formula export now also writes `formula_export_manifest.json` by default. Strict
 
 `barsmith_cli protocol init|validate|explain` creates and inspects strict research protocol manifests. `protocol validate` now enforces schema version, `strict=true`, valid window ordering, and non-overlapping discovery/validation/lockbox windows. `eval-formulas --stage lockbox` now requires exactly one frozen formula and refuses validation-ranked selection.
 
-`comb` now accepts `--engine auto|builtin|custom`. `auto` remains the default
-and routes next-bar targets to the builtin engine and richer Rust targets such
-as `2x_atr_tp_atr_stop` to the custom engine.
+`comb` now uses `custom_rs` as its only supported strategy preparation path.
+Existing commands should remove the old path-selection flag and use one of the
+targets listed in `docs/targets.md`.
 
 ### ATR-stop contract sizing uses realized target risk
 
 Contract sizing for `2x_atr_tp_atr_stop`, `3x_atr_tp_atr_stop`,
-`atr_tp_atr_stop`, and the `atr_stop` alias now infers a target-generated
-realized risk column instead of raw `atr`.
+and `atr_tp_atr_stop` now infers a target-generated realized risk column
+instead of raw `atr`.
 
 Old behavior:
 
@@ -51,7 +51,6 @@ New behavior:
 - `2x_atr_tp_atr_stop` -> `2x_atr_tp_atr_stop_risk`
 - `3x_atr_tp_atr_stop` -> `3x_atr_tp_atr_stop_risk`
 - `atr_tp_atr_stop` -> `atr_tp_atr_stop_risk`
-- `atr_stop` -> `2x_atr_tp_atr_stop_risk`
 - risk model: entry-to-stop distance after asset tick rounding
 
 Old contract-sized runs and new realized-risk runs are not directly comparable.

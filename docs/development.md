@@ -25,6 +25,7 @@ scripts/benchmark_smoke.sh
 - Keep hot loops allocation-aware and benchmarked. Prefer readable helper boundaries outside tight loops.
 - Run the Rust benchmark gate before ending performance-sensitive implementation work and before pushing it.
 - Keep formula evaluation on the shared Rust evaluator path so ranked-formula workflows do not drift from combination-search semantics.
+- Keep target additions inside `custom_rs/src/targets/<target-id>/` plus the explicit `custom_rs` registry. Shared indicator math belongs in `barsmith_indicators`.
 - Keep resume semantics conservative. New settings that affect the search space or result meaning belong in the run identity manifest.
 - Keep generated outputs, local benchmark data, Parquet, DuckDB, and raw private CSVs out of git.
 - Document breaking changes in `docs/migration.md` and user-facing behavior in the relevant docs page.
@@ -57,6 +58,7 @@ User-facing changes should update at least one of:
 - `README.md` for top-level behavior and examples.
 - `docs/cli.md` for flags.
 - `docs/data-contract.md` for input/prepared data requirements.
+- `docs/targets.md` for target, strategy-preparation, and shared-indicator behavior.
 - `docs/runs.md` and `docs/outputs.md` for resume and run-folder behavior.
 - `docs/performance.md` for performance-sensitive behavior.
 - `docs/migration.md` for breaking changes.

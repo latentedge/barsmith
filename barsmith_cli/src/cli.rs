@@ -490,10 +490,6 @@ pub struct ProtocolInitArgs {
     #[arg(long = "direction")]
     pub direction: Option<String>,
 
-    /// Optional feature-engineering engine label.
-    #[arg(long = "engine")]
-    pub engine: Option<String>,
-
     #[arg(long = "discovery-start")]
     pub discovery_start: Option<String>,
 
@@ -984,11 +980,6 @@ pub struct CombArgs {
     #[arg(long, default_value = "next_bar_color_and_wicks")]
     pub target: String,
 
-    /// Feature-engineering engine. `auto` uses the builtin engine for simple
-    /// next-bar targets and the custom engine for richer prepared targets.
-    #[arg(long = "engine", value_enum, default_value = "auto")]
-    pub engine: EngineValue,
-
     /// Root directory for standardized run folders.
     ///
     /// The effective run folder becomes
@@ -1250,9 +1241,8 @@ pub struct CombArgs {
     #[arg(long = "stacking-mode", value_enum, default_value = "no-stacking")]
     pub stacking_mode: StackingModeValue,
     // Zero-sample pruning, cross-run seeding, coverage checks, and
-    // storage-backed membership reuse have been removed in favor of a
-    // simpler, evaluation-only engine. The corresponding flags are no
-    // longer exposed at the CLI level.
+    // storage-backed membership reuse were removed after the evaluator
+    // settled on a smaller supported surface.
 }
 
 impl Cli {
@@ -1703,13 +1693,6 @@ pub enum PlotMetricValue {
     R,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-pub enum EngineValue {
-    Auto,
-    Builtin,
-    Custom,
-}
-
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum DirectionValue {
     Long,
@@ -1796,7 +1779,6 @@ mod tests {
             csv_path: PathBuf::from("dummy.csv"),
             direction: DirectionValue::Long,
             target: "next_bar_color_and_wicks".to_string(),
-            engine: EngineValue::Auto,
             runs_root: PathBuf::from(DEFAULT_RUNS_ROOT),
             dataset_id: None,
             run_id: None,
@@ -2046,9 +2028,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_stop_distance_column_overrides_atr_stop_inference() {
+    fn explicit_stop_distance_column_overrides_target_risk_inference() {
         let mut args = base_args();
-        args.target = "atr_stop".to_string();
+        args.target = "2x_atr_tp_atr_stop".to_string();
         args.position_sizing = PositionSizingValue::Contracts;
         args.asset = Some("MES".to_string());
         args.stop_distance_column = Some("atr".to_string());

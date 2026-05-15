@@ -111,9 +111,8 @@ fn count_combos_before(c: usize, n: usize, start: usize, elements_remaining: usi
         return 0;
     }
 
-    // Hockey-stick identity:
-    // sum_{idx=start}^{c-1} C(n - idx - 1, r - 1)
-    // = C(n - start, r) - C(n - c, r)
+    // The hockey-stick identity collapses the skipped-prefix sum into
+    // C(n - start, r) minus C(n - c, r).
     combinations_for_depth(n - start, elements_remaining)
         - combinations_for_depth(n - c, elements_remaining)
 }
@@ -226,6 +225,52 @@ impl<'a> SeekableCombinationIterator<'a> {
             return;
         }
 
+        match self.current_depth {
+            1 => {
+                if self.current_indices[0] + 1 < self.n {
+                    self.current_indices[0] += 1;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            2 => {
+                let first = self.current_indices[0];
+                let second = self.current_indices[1];
+                if second + 1 < self.n {
+                    self.current_indices[1] = second + 1;
+                } else if first + 2 < self.n {
+                    let next_first = first + 1;
+                    self.current_indices[0] = next_first;
+                    self.current_indices[1] = next_first + 1;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            3 => {
+                let first = self.current_indices[0];
+                let second = self.current_indices[1];
+                let third = self.current_indices[2];
+                if third + 1 < self.n {
+                    self.current_indices[2] = third + 1;
+                } else if second + 2 < self.n {
+                    let next_second = second + 1;
+                    self.current_indices[1] = next_second;
+                    self.current_indices[2] = next_second + 1;
+                } else if first + 3 < self.n {
+                    let next_first = first + 1;
+                    self.current_indices[0] = next_first;
+                    self.current_indices[1] = next_first + 1;
+                    self.current_indices[2] = next_first + 2;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            _ => {}
+        }
+
         let k = self.current_indices.len();
 
         // Move the rightmost index that can still advance, then rebuild the suffix.
@@ -247,6 +292,15 @@ impl<'a> SeekableCombinationIterator<'a> {
         }
 
         self.current_indices = (0..self.current_depth).collect();
+    }
+
+    fn start_next_depth(&mut self) {
+        self.current_depth += 1;
+        if self.current_depth > self.max_depth {
+            self.exhausted = true;
+        } else {
+            self.current_indices = (0..self.current_depth).collect();
+        }
     }
 
     /// Get the current global index (for debugging/verification).
@@ -335,6 +389,52 @@ impl SeekableIndexIterator {
             return;
         }
 
+        match self.current_depth {
+            1 => {
+                if self.current_indices[0] + 1 < self.n {
+                    self.current_indices[0] += 1;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            2 => {
+                let first = self.current_indices[0];
+                let second = self.current_indices[1];
+                if second + 1 < self.n {
+                    self.current_indices[1] = second + 1;
+                } else if first + 2 < self.n {
+                    let next_first = first + 1;
+                    self.current_indices[0] = next_first;
+                    self.current_indices[1] = next_first + 1;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            3 => {
+                let first = self.current_indices[0];
+                let second = self.current_indices[1];
+                let third = self.current_indices[2];
+                if third + 1 < self.n {
+                    self.current_indices[2] = third + 1;
+                } else if second + 2 < self.n {
+                    let next_second = second + 1;
+                    self.current_indices[1] = next_second;
+                    self.current_indices[2] = next_second + 1;
+                } else if first + 3 < self.n {
+                    let next_first = first + 1;
+                    self.current_indices[0] = next_first;
+                    self.current_indices[1] = next_first + 1;
+                    self.current_indices[2] = next_first + 2;
+                } else {
+                    self.start_next_depth();
+                }
+                return;
+            }
+            _ => {}
+        }
+
         let k = self.current_indices.len();
 
         // Move the rightmost index that can still advance, then rebuild the suffix.
@@ -349,13 +449,16 @@ impl SeekableIndexIterator {
             }
         }
 
+        self.start_next_depth();
+    }
+
+    fn start_next_depth(&mut self) {
         self.current_depth += 1;
         if self.current_depth > self.max_depth {
             self.exhausted = true;
-            return;
+        } else {
+            self.current_indices = (0..self.current_depth).collect();
         }
-
-        self.current_indices = (0..self.current_depth).collect();
     }
 }
 

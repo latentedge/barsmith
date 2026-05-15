@@ -19,7 +19,6 @@ fn init(args: ProtocolInitArgs) -> Result<()> {
         dataset_id: args.dataset_id,
         target: normalize_target(&args.target),
         direction: args.direction,
-        engine: args.engine,
         discovery: ResearchWindow::new(
             parse_optional_date(args.discovery_start.as_deref(), "--discovery-start")?,
             parse_optional_date(args.discovery_end.as_deref(), "--discovery-end")?,
@@ -61,9 +60,6 @@ fn explain(args: ProtocolValidateArgs) -> Result<()> {
     if let Some(direction) = protocol.direction.as_deref() {
         println!("Direction: {direction}");
     }
-    if let Some(engine) = protocol.engine.as_deref() {
-        println!("Engine: {engine}");
-    }
     println!(
         "Discovery: {} -> {}",
         fmt_date(protocol.discovery.start),
@@ -96,9 +92,5 @@ fn fmt_date(date: Option<chrono::NaiveDate>) -> String {
 }
 
 fn normalize_target(target: &str) -> String {
-    if target == "atr_stop" {
-        "2x_atr_tp_atr_stop".to_string()
-    } else {
-        target.to_string()
-    }
+    custom_rs::targets::registry::normalize_target(target)
 }

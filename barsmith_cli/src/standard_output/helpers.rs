@@ -55,11 +55,7 @@ pub(super) fn dataset_id_from_prepared(path: &Path) -> String {
 }
 
 pub(super) fn normalize_target(target: &str) -> String {
-    if target == "atr_stop" {
-        "2x_atr_tp_atr_stop".to_string()
-    } else {
-        target.to_string()
-    }
+    custom_rs::targets::registry::normalize_target(target)
 }
 
 pub(super) fn sanitize_segment(raw: &str) -> String {
