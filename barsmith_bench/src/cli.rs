@@ -34,7 +34,7 @@ pub struct RunArgs {
     pub samples: usize,
 
     /// Untimed warmup samples per benchmark.
-    #[arg(long = "warmups", default_value_t = 2)]
+    #[arg(long = "warmups", default_value_t = 5)]
     pub warmups: usize,
 
     /// Output JSON path.

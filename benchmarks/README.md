@@ -65,13 +65,22 @@ BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate
 `scripts/performance_gate.sh` automatically uses
 `target/barsmith-bench/baseline.json` for the default smoke suite when that file
 exists. Targeted suites use matching local baselines, such as
-`target/barsmith-bench/select-validate-baseline.json`. Set
+`target/barsmith-bench/select-validate-baseline.json`; suite aliases use the
+same canonical baseline name. Set
 `BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing an
 accepted local baseline after a main-branch change has been reviewed.
 The wrapper rejects `BARSMITH_PERF_REPORT` paths that would overwrite the active
 baseline unless baseline comparison is explicitly disabled.
+The default run uses five untimed warmups per benchmark so cold starts do not
+dominate the hard-gate samples.
+Targeted suite runs use suite-specific default report and scratch paths, which
+keeps separate benchmark runs from overwriting each other unless a path is
+explicitly overridden.
 
 Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.
+`scripts/benchmark_smoke.sh` keeps the default `comb-cli` smoke report at
+`target/barsmith-bench/benchmark-smoke.json`; non-default suites get
+suite-specific report and scratch paths unless explicitly overridden.
 
 The report marks stable microbenchmarks as `hard-gate` and CLI end-to-end timings as `review-only`. `compare --fail-on-regression` fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes are surfaced for review instead of hard-failing the gate.
 

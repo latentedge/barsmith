@@ -55,7 +55,7 @@ scripts/benchmark_smoke.sh
 ```
 
 This is a small release-mode CLI throughput check. Use it as a sanity gate, not as the hard performance gate.
-By default it builds the release benchmark and CLI binaries once for the `comb-cli` suite, invokes `target/release/barsmith_bench` directly, and writes `target/barsmith-bench/benchmark-smoke.json`. If `BARSMITH_BENCH_SUITE` is set to a non-CLI suite, it skips the CLI binary build.
+By default it builds the release benchmark and CLI binaries once for the `comb-cli` suite, invokes `target/release/barsmith_bench` directly, and writes `target/barsmith-bench/benchmark-smoke.json`. Non-default suites get suite-specific report and scratch paths unless those paths are explicitly overridden. If `BARSMITH_BENCH_SUITE` is set to a non-CLI suite, it skips the CLI binary build.
 
 On memory-constrained machines:
 
@@ -97,9 +97,15 @@ BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate
 The wrapper automatically compares the default smoke suite against
 `target/barsmith-bench/baseline.json` when that file exists. Targeted suites use
 matching local baselines, such as
-`target/barsmith-bench/select-validate-baseline.json`.
+`target/barsmith-bench/select-validate-baseline.json`; suite aliases use the
+same canonical baseline name.
 It rejects report paths that would overwrite the active baseline unless
 `BARSMITH_PERF_BASELINE=off` is set.
+The default runner uses five untimed warmups per benchmark before measuring
+samples, which reduces cold-start noise in the hard gate.
+Targeted suites use suite-specific default report and scratch paths, so separate
+benchmark runs do not overwrite each other unless a path is explicitly
+overridden.
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 

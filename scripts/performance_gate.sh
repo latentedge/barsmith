@@ -3,24 +3,44 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUITE="${BARSMITH_PERF_SUITE:-smoke}"
+BASELINE_SUITE="$SUITE"
+case "$BASELINE_SUITE" in
+  formula-eval)
+    BASELINE_SUITE="strict-eval"
+    ;;
+  selection-workflow)
+    BASELINE_SUITE="select-validate"
+    ;;
+esac
+SAFE_SUITE="$(printf '%s' "$SUITE" | tr -c 'A-Za-z0-9._-' '_')"
+SAFE_BASELINE_SUITE="$(printf '%s' "$BASELINE_SUITE" | tr -c 'A-Za-z0-9._-' '_')"
 SAMPLES="${BARSMITH_PERF_SAMPLES:-21}"
-WARMUPS="${BARSMITH_PERF_WARMUPS:-2}"
-REPORT="${BARSMITH_PERF_REPORT:-target/barsmith-bench/performance-gate.json}"
+WARMUPS="${BARSMITH_PERF_WARMUPS:-5}"
 if [[ "$SUITE" == "smoke" ]]; then
+  DEFAULT_REPORT="target/barsmith-bench/performance-gate.json"
+  DEFAULT_COMPARISON="target/barsmith-bench/performance-gate-comparison.json"
+  DEFAULT_COMPARISON_MD="target/barsmith-bench/performance-gate-comparison.md"
+else
+  DEFAULT_REPORT="target/barsmith-bench/${SAFE_SUITE}-performance-gate.json"
+  DEFAULT_COMPARISON="target/barsmith-bench/${SAFE_SUITE}-performance-gate-comparison.json"
+  DEFAULT_COMPARISON_MD="target/barsmith-bench/${SAFE_SUITE}-performance-gate-comparison.md"
+fi
+REPORT="${BARSMITH_PERF_REPORT:-$DEFAULT_REPORT}"
+if [[ "$BASELINE_SUITE" == "smoke" ]]; then
   DEFAULT_BASELINE="target/barsmith-bench/baseline.json"
 else
-  DEFAULT_BASELINE="target/barsmith-bench/${SUITE}-baseline.json"
+  DEFAULT_BASELINE="target/barsmith-bench/${SAFE_BASELINE_SUITE}-baseline.json"
 fi
 BASELINE="${BARSMITH_PERF_BASELINE:-}"
-COMPARISON="${BARSMITH_PERF_COMPARISON:-target/barsmith-bench/performance-gate-comparison.json}"
-COMPARISON_MD="${BARSMITH_PERF_COMPARISON_MD:-target/barsmith-bench/performance-gate-comparison.md}"
+COMPARISON="${BARSMITH_PERF_COMPARISON:-$DEFAULT_COMPARISON}"
+COMPARISON_MD="${BARSMITH_PERF_COMPARISON_MD:-$DEFAULT_COMPARISON_MD}"
 MEDIAN_BUDGET="${BARSMITH_PERF_MEDIAN_BUDGET_PCT:-3.0}"
 P95_BUDGET="${BARSMITH_PERF_P95_BUDGET_PCT:-5.0}"
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 BENCH_BIN="${BARSMITH_BENCH_BIN:-$TARGET_DIR/release/barsmith_bench}"
 CLI_BIN="${BARSMITH_CLI_BIN:-$TARGET_DIR/release/barsmith_cli}"
 CSV="${BARSMITH_BENCH_CSV:-tests/data/ohlcv_tiny.csv}"
-OUT_DIR="${BARSMITH_PERF_OUT:-tmp/performance-gate}"
+OUT_DIR="${BARSMITH_PERF_OUT:-tmp/performance-gate/$SAFE_SUITE}"
 MAX_DEPTH="${BARSMITH_BENCH_MAX_DEPTH:-2}"
 MIN_SAMPLES="${BARSMITH_BENCH_MIN_SAMPLES:-25}"
 MAX_COMBOS="${BARSMITH_BENCH_MAX_COMBOS:-200}"

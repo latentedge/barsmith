@@ -163,14 +163,19 @@ Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to enforce a
 same-machine comparison with `--fail-on-regression`, or rely on the wrapper's
 default: it automatically uses `target/barsmith-bench/baseline.json` for the
 default smoke suite when that file exists. Targeted suites use matching local
-baselines, such as `target/barsmith-bench/select-validate-baseline.json`. Set
-`BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing the
-accepted local baseline. Without a matching baseline file, the script writes the
-current report only.
+baselines, such as `target/barsmith-bench/select-validate-baseline.json`; suite
+aliases use the same canonical baseline name. Set `BARSMITH_PERF_BASELINE=off`
+only when intentionally creating or refreshing the accepted local baseline.
+Without a matching baseline file, the script writes the current report only.
 
 To prevent accidental self-comparisons, the wrapper fails before running if the
 candidate report path would overwrite the active baseline. Use
 `BARSMITH_PERF_BASELINE=off` when refreshing a baseline on purpose.
+The default runner uses five untimed warmups per benchmark before recording
+samples, which keeps local comparisons closer to steady-state timing.
+Targeted suites use suite-specific default report and scratch paths, so separate
+benchmark runs do not overwrite each other unless a path is explicitly
+overridden.
 
 ## Local smoke benchmark
 
@@ -182,7 +187,12 @@ scripts/benchmark_smoke.sh
 ```
 
 `scripts/benchmark_smoke.sh` is a thin wrapper around `barsmith_bench`. By default it runs the `comb-cli` suite and writes `target/barsmith-bench/benchmark-smoke.json`.
-For CLI suites it builds the release benchmark and CLI binaries once, then invokes the benchmark binary directly. It is intentionally review-only because it includes CLI startup, feature engineering, storage, and filesystem noise. Use `scripts/performance_gate.sh` for blocking hot-path regression checks.
+Non-default suites get suite-specific report and scratch paths unless those paths
+are explicitly overridden. For CLI suites it builds the release benchmark and
+CLI binaries once, then invokes the benchmark binary directly. It is
+intentionally review-only because it includes CLI startup, feature engineering,
+storage, and filesystem noise. Use `scripts/performance_gate.sh` for blocking
+hot-path regression checks.
 
 When running CLI suites through `barsmith_bench` directly, build `barsmith_cli`
 first or pass `--barsmith-bin` to an existing release binary. The benchmark

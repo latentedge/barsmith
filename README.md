@@ -336,6 +336,9 @@ When `target/barsmith-bench/baseline.json` exists, the default smoke gate
 compares against it with `barsmith_bench compare --fail-on-regression`.
 Targeted suites use matching local baselines, such as
 `target/barsmith-bench/select-validate-baseline.json`, when those files exist.
+Suite aliases use the same canonical baseline name, so
+`BARSMITH_PERF_SUITE=selection-workflow` looks for the `select-validate`
+baseline.
 Refresh a local baseline only after an accepted main-branch change:
 
 ```bash
@@ -347,6 +350,9 @@ BARSMITH_PERF_BASELINE=off \
 The wrapper rejects attempts to write the current report to the active baseline
 path unless `BARSMITH_PERF_BASELINE=off` is set, which prevents accidental
 self-comparisons.
+The default run uses five untimed warmups per benchmark to reduce cold-start
+timing noise before the hard-gate samples are measured.
+Targeted suite runs use suite-specific default report and scratch paths.
 
 The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For max-depth-5 refactors, also run `--suite comb-depth5`. For ATR target-generation refactors, build the benchmark runner with `--features target-generation` and run `--suite target-generation` before validating a larger local CLI profile.
 
