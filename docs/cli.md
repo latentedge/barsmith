@@ -17,6 +17,10 @@ barsmith_cli results --help
 barsmith_cli select --help
 ```
 
+PNG plotting is included in the default build. If `barsmith_cli` is built with
+`--no-default-features`, `--plot` returns a clear error while CSV/JSON/equity
+curve exports continue to work.
+
 ## `comb`
 
 Use `comb` when you want Barsmith to engineer features, enumerate combinations, and write a durable run folder.

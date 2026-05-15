@@ -10,7 +10,11 @@ Prerequisites:
 Common commands:
 - Format: `cargo fmt --all --check`
 - Lint: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- Lean CLI check: `cargo check -p barsmith_cli --no-default-features`
 - Test: `cargo test --workspace --all-targets --all-features`
+- Script syntax: `bash -n scripts/*.sh`
+- CLI drift check: `scripts/check_stale_cli_flags.sh`
+- Registry schema check: `scripts/check_registry_schema.sh`
 - Smoke: `scripts/golden_smoke.sh`
 - Performance gate: `scripts/performance_gate.sh`
 - CLI benchmark smoke: `scripts/benchmark_smoke.sh`
@@ -28,6 +32,8 @@ This repo includes committed CSV fixtures under `tests/data/` to keep the test s
 - Add/adjust tests for behavior changes.
 - Prefer clear error messages over panics in runtime paths.
 - Avoid committing large datasets, logs, or generated outputs.
+- Keep `comb` examples on canonical flag names; do not reintroduce legacy aliases.
+- Keep `runs/registry/**/*.json` small and privacy-safe when committing run audit records.
 - For performance-sensitive changes, record before/after benchmark evidence using the fixture tiers in `benchmarks/README.md`.
 - Update docs when changing user-visible behavior. Start with `docs/testing.md`, `docs/migration.md`, and the relevant CLI/data/run/output page.
 

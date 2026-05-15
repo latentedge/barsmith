@@ -1,5 +1,6 @@
 mod cli;
 mod eval_formulas;
+#[cfg(feature = "plotting")]
 mod plot;
 mod protocol_cmd;
 mod results;

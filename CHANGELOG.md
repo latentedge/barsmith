@@ -42,6 +42,14 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Hardened several non-hot-path runtime boundaries by returning contextual errors for writer/subset-saver thread failures and removing avoidable unwraps from storage, subset-cache decoding, and finite-float sorting helpers.
 - Added targeted `comb-depth5` and `target-generation` benchmark suites, depth-5 SIMD scan dispatch, fixed-depth scalar bitset coverage, small-mask support sorting, and target-generation parity tests for performance-sensitive refactors.
 - Added the strict `select validate`, `select lockbox`, and `select explain` workflow for protocol-bound formula selection, including institutional/exploratory presets, source search accounting, workflow statuses, docs, smoke tests, and a review-only `select-validate` benchmark suite.
+- Made `runs/registry/**/*.json` Git-trackable by default while keeping full run artifacts ignored.
+- Removed remaining legacy CLI aliases such as `--min-sample-size`, `--report-metrics`, `--resume-offset`, and other compatibility spellings; supported docs and scripts now use canonical flags only.
+- Added stale CLI flag and registry schema checks to local validation and CI.
+- Hardened no-stacking evaluator state so hot-path scans use context-validated exit indices instead of panic-based invariants.
+- Split top-result rendering out of the main pipeline module to keep orchestration easier to review without changing evaluator behavior.
+- Made PNG plotting an optional default feature for `barsmith_cli`, so lean builds can use `--no-default-features` without pulling plot dependencies.
+- Specialized the core statistics accumulator and full-length trade-gate scan path to preserve hot-path performance after the readability refactor.
+- Lengthened the core statistics benchmark sample so the hard performance gate is less sensitive to sub-millisecond host jitter.
 
 ## 0.1.0
 

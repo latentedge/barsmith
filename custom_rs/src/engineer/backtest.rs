@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow};
 use barsmith_indicators::{FLOAT_TOLERANCE, atr, build_long_levels, build_short_levels};
 use barsmith_rs::Direction;
 use barsmith_rs::backtest::{BacktestInputs, BacktestOutputs, TradeDirection, run_backtest};
-use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use polars::prelude::*;
 
 use super::FeatureEngineer;
@@ -361,16 +361,12 @@ fn compute_week_indices(timestamps: &[DateTime<Utc>]) -> (Vec<i64>, Vec<usize>) 
     }
 
     // Anchor Sunday 22:00 UTC so weekly rolling windows stay stable.
-    let anchor_date = NaiveDate::from_ymd_opt(1970, 1, 4).expect("valid date");
-    let anchor_time = NaiveTime::from_hms_opt(22, 0, 0).expect("valid time");
-    let anchor = DateTime::<Utc>::from_naive_utc_and_offset(anchor_date.and_time(anchor_time), Utc);
-
-    let week_secs = 7 * 24 * 60 * 60;
+    const ANCHOR_SECS: i64 = (3 * 24 * 60 * 60) + (22 * 60 * 60);
+    const WEEK_SECS: i64 = 7 * 24 * 60 * 60;
     let mut week_index = Vec::with_capacity(len);
     for ts in timestamps {
-        let diff = ts.signed_duration_since(anchor);
-        let secs = diff.num_seconds().max(0);
-        week_index.push(secs / week_secs);
+        let secs = ts.timestamp().saturating_sub(ANCHOR_SECS).max(0);
+        week_index.push(secs / WEEK_SECS);
     }
 
     // Record the last index in each weekly bucket.

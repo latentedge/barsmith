@@ -125,7 +125,7 @@ pub struct SelectValidateArgs {
     #[arg(long = "source-rank-by", value_enum, default_value = "total-return")]
     pub source_rank_by: ResultRankByValue,
 
-    #[arg(long = "min-samples", alias = "min-sample-size", default_value_t = 500)]
+    #[arg(long = "min-samples", default_value_t = 500)]
     pub min_samples: usize,
 
     #[arg(long = "min-win-rate", default_value_t = 0.0)]
@@ -927,7 +927,7 @@ pub struct ResultsArgs {
     #[arg(long, default_value = "next_bar_color_and_wicks")]
     pub target: String,
 
-    #[arg(long = "min-samples", alias = "min-sample-size", default_value_t = 500)]
+    #[arg(long = "min-samples", default_value_t = 500)]
     pub min_samples: usize,
 
     #[arg(long = "min-win-rate", default_value_t = 0.0)]
@@ -1043,7 +1043,7 @@ pub struct CombArgs {
     /// Minimum samples required for storing a combination in cumulative
     /// results. Combinations below this threshold are evaluated but not
     /// persisted.
-    #[arg(long = "min-samples", alias = "min-sample-size", default_value_t = 100)]
+    #[arg(long = "min-samples", default_value_t = 100)]
     pub min_samples: usize,
 
     /// Minimum samples required for a combination to be considered
@@ -1069,15 +1069,15 @@ pub struct CombArgs {
     pub auto_batch: bool,
 
     /// Number of worker threads (omit to use all logical cores)
-    #[arg(long = "workers", alias = "n-jobs")]
+    #[arg(long = "workers")]
     pub workers: Option<usize>,
 
     /// Optional resume offset for combination enumeration
-    #[arg(long = "resume-from", alias = "resume-offset", default_value_t = 0)]
+    #[arg(long = "resume-from", default_value_t = 0)]
     pub resume_from: u64,
 
     /// Optional cap on combinations to evaluate this run
-    #[arg(long = "max-combos", alias = "limit")]
+    #[arg(long = "max-combos")]
     pub max_combos: Option<usize>,
 
     /// Enable dry-run mode (emit plan only)
@@ -1089,20 +1089,15 @@ pub struct CombArgs {
     pub quiet: bool,
 
     /// Control final metrics report emission (presets also update --report-top)
-    #[arg(
-        long = "report",
-        alias = "report-metrics",
-        value_enum,
-        default_value = "full"
-    )]
+    #[arg(long = "report", value_enum, default_value = "full")]
     pub report_metrics: ReportMetricsValue,
 
     /// Number of combinations to include in the final summary table
-    #[arg(long = "top-k", alias = "report-top", default_value_t = 5)]
+    #[arg(long = "top-k", default_value_t = 5)]
     pub top_k: usize,
 
     /// Force recompute even if existing results already cover the requested max-depth or CSV fingerprint
-    #[arg(long = "force", alias = "force-recompute", default_value_t = false)]
+    #[arg(long = "force", default_value_t = false)]
     pub force: bool,
 
     /// Acknowledge that a newly engineered dataset differs from an existing
@@ -1111,15 +1106,11 @@ pub struct CombArgs {
     pub ack_new_df: bool,
 
     /// Enable numeric feature-to-feature comparisons (pairwise conditions)
-    #[arg(
-        long = "feature-pairs",
-        alias = "enable-feature-pairs",
-        default_value_t = false
-    )]
+    #[arg(long = "feature-pairs", default_value_t = false)]
     pub feature_pairs: bool,
 
     /// Maximum number of feature-to-feature comparison predicates to generate
-    #[arg(long = "feature-pairs-limit", alias = "feature-pairs-max")]
+    #[arg(long = "feature-pairs-limit")]
     pub feature_pairs_limit: Option<usize>,
 
     /// Maximum allowed drawdown (in R units) for a combination to be stored
@@ -1144,11 +1135,7 @@ pub struct CombArgs {
 
     /// Enable subset-based pruning of higher-depth combinations using
     /// zero-sample depth-2 pairs as dead prefixes.
-    #[arg(
-        long = "subset-pruning",
-        alias = "enable-subset-pruning",
-        default_value_t = false
-    )]
+    #[arg(long = "subset-pruning", default_value_t = false)]
     pub subset_pruning: bool,
 
     /// Control how much per-combination statistics detail is computed.
@@ -1747,11 +1734,7 @@ where
 {
     for arg in args {
         let raw = arg.as_ref();
-        if raw == "--resume-from"
-            || raw.starts_with("--resume-from=")
-            || raw == "--resume-offset"
-            || raw.starts_with("--resume-offset=")
-        {
+        if raw == "--resume-from" || raw.starts_with("--resume-from=") {
             return true;
         }
     }
@@ -1895,10 +1878,41 @@ mod tests {
             "barsmith_cli",
             "--resume-from=0"
         ]));
-        assert!(detect_explicit_resume_flag([
+        assert!(!detect_explicit_resume_flag([
             "barsmith_cli",
             "--resume-offset=42"
         ]));
+    }
+
+    #[test]
+    fn removed_comb_aliases_are_rejected() {
+        let value_flags = [
+            ("--min-sample-size", "100"),
+            ("--n-jobs", "2"),
+            ("--resume-offset", "1000"),
+            ("--limit", "1000"),
+            ("--report-metrics", "top10"),
+            ("--report-top", "10"),
+            ("--force-recompute", "true"),
+            ("--feature-pairs-max", "10"),
+        ];
+        for (flag, value) in value_flags {
+            let err = Cli::try_parse_from(["barsmith", "comb", "--csv", "dummy.csv", flag, value])
+                .expect_err("removed compatibility alias should not parse");
+            assert!(
+                matches!(err.kind(), clap::error::ErrorKind::UnknownArgument),
+                "expected {flag} to be rejected as an unknown argument, got {err:?}"
+            );
+        }
+
+        for flag in ["--enable-feature-pairs", "--enable-subset-pruning"] {
+            let err = Cli::try_parse_from(["barsmith", "comb", "--csv", "dummy.csv", flag])
+                .expect_err("removed compatibility alias should not parse");
+            assert!(
+                matches!(err.kind(), clap::error::ErrorKind::UnknownArgument),
+                "expected {flag} to be rejected as an unknown argument, got {err:?}"
+            );
+        }
     }
 
     #[test]

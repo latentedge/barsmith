@@ -90,7 +90,7 @@ pub struct EvaluationContext {
     eligible: Option<Arc<Vec<bool>>>,
     trade_gate_bitset: Option<Arc<BitsetMask>>,
     stacking_mode: StackingMode,
-    exit_indices: Option<Arc<Vec<usize>>>,
+    exit_indices: Arc<Vec<usize>>,
     row_count: usize,
     stats_detail: StatsDetail,
     position_sizing: PositionSizingMode,
@@ -271,9 +271,9 @@ impl EvaluationContext {
                 };
                 values.push(idx);
             }
-            Some(Arc::new(values))
+            Arc::new(values)
         } else {
-            None
+            Arc::new(Vec::new())
         };
         Ok(Self {
             data: Arc::clone(&data),
@@ -322,7 +322,15 @@ impl EvaluationContext {
     }
 
     pub fn exit_indices(&self) -> Option<&[usize]> {
-        self.exit_indices.as_deref().map(|values| values.as_slice())
+        if self.stacking_mode == StackingMode::NoStacking {
+            Some(self.exit_indices.as_slice())
+        } else {
+            None
+        }
+    }
+
+    fn scan_exit_indices(&self) -> &[usize] {
+        self.exit_indices.as_slice()
     }
 
     fn trade_gate_bitset(&self) -> Option<&BitsetMask> {
@@ -754,8 +762,7 @@ fn evaluate_for_bitsets_profiled(
     let rewards = ctx.rewards();
     let no_stacking = ctx.stacking_mode() == StackingMode::NoStacking;
     let exit_indices = if no_stacking {
-        ctx.exit_indices()
-            .expect("exit indices must be present when stacking_mode is NoStacking")
+        ctx.scan_exit_indices()
     } else {
         &[]
     };
@@ -810,7 +817,6 @@ fn evaluate_for_bitsets_profiled(
                 let mut total = 0usize;
                 let mut label_hits = 0usize;
                 let mut acc = CoreStatsAccumulator::new(
-                    position_sizing,
                     ctx.capital_dollar(),
                     ctx.risk_pct_per_trade(),
                     min_contracts,
@@ -830,12 +836,13 @@ fn evaluate_for_bitsets_profiled(
 
                     total += 1;
                     acc.total_bars += 1;
-                    let rpc = if matches!(position_sizing, PositionSizingMode::Contracts) {
-                        risk_per_contract.and_then(|values| values.get(idx).copied())
-                    } else {
-                        None
-                    };
-                    acc.push(rr_net, rpc);
+                    match position_sizing {
+                        PositionSizingMode::Fractional => acc.push_fractional(rr_net),
+                        PositionSizingMode::Contracts => {
+                            let rpc = risk_per_contract.and_then(|values| values.get(idx).copied());
+                            acc.push_contracts(rr_net, rpc);
+                        }
+                    }
                     if target[idx] {
                         label_hits += 1;
                     }
@@ -913,7 +920,6 @@ fn evaluate_for_bitsets_profiled(
                 let mut total = 0usize;
                 let mut label_hits = 0usize;
                 let mut acc = CoreStatsAccumulator::new(
-                    position_sizing,
                     ctx.capital_dollar(),
                     ctx.risk_pct_per_trade(),
                     min_contracts,
@@ -929,12 +935,13 @@ fn evaluate_for_bitsets_profiled(
 
                     total += 1;
                     acc.total_bars += 1;
-                    let rpc = if matches!(position_sizing, PositionSizingMode::Contracts) {
-                        risk_per_contract.and_then(|values| values.get(idx).copied())
-                    } else {
-                        None
-                    };
-                    acc.push(rr_net, rpc);
+                    match position_sizing {
+                        PositionSizingMode::Fractional => acc.push_fractional(rr_net),
+                        PositionSizingMode::Contracts => {
+                            let rpc = risk_per_contract.and_then(|values| values.get(idx).copied());
+                            acc.push_contracts(rr_net, rpc);
+                        }
+                    }
                     if target[idx] {
                         label_hits += 1;
                     }
@@ -1411,8 +1418,7 @@ fn evaluate_for_bitsets(
     let rewards = ctx.rewards();
     let no_stacking = ctx.stacking_mode() == StackingMode::NoStacking;
     let exit_indices = if no_stacking {
-        ctx.exit_indices()
-            .expect("exit indices must be present when stacking_mode is NoStacking")
+        ctx.scan_exit_indices()
     } else {
         &[]
     };
@@ -1470,7 +1476,6 @@ fn evaluate_for_bitsets(
                 let mut total = 0usize;
                 let mut label_hits = 0usize;
                 let mut acc = CoreStatsAccumulator::new(
-                    position_sizing,
                     ctx.capital_dollar(),
                     ctx.risk_pct_per_trade(),
                     min_contracts,
@@ -1490,12 +1495,13 @@ fn evaluate_for_bitsets(
 
                     total += 1;
                     acc.total_bars += 1;
-                    let rpc = if matches!(position_sizing, PositionSizingMode::Contracts) {
-                        risk_per_contract.and_then(|values| values.get(idx).copied())
-                    } else {
-                        None
-                    };
-                    acc.push(rr_net, rpc);
+                    match position_sizing {
+                        PositionSizingMode::Fractional => acc.push_fractional(rr_net),
+                        PositionSizingMode::Contracts => {
+                            let rpc = risk_per_contract.and_then(|values| values.get(idx).copied());
+                            acc.push_contracts(rr_net, rpc);
+                        }
+                    }
                     if target[idx] {
                         label_hits += 1;
                     }
@@ -1555,7 +1561,6 @@ fn evaluate_for_bitsets(
                 let mut total = 0usize;
                 let mut label_hits = 0usize;
                 let mut acc = CoreStatsAccumulator::new(
-                    position_sizing,
                     ctx.capital_dollar(),
                     ctx.risk_pct_per_trade(),
                     min_contracts,
@@ -1571,12 +1576,13 @@ fn evaluate_for_bitsets(
 
                     total += 1;
                     acc.total_bars += 1;
-                    let rpc = if matches!(position_sizing, PositionSizingMode::Contracts) {
-                        risk_per_contract.and_then(|values| values.get(idx).copied())
-                    } else {
-                        None
-                    };
-                    acc.push(rr_net, rpc);
+                    match position_sizing {
+                        PositionSizingMode::Fractional => acc.push_fractional(rr_net),
+                        PositionSizingMode::Contracts => {
+                            let rpc = risk_per_contract.and_then(|values| values.get(idx).copied());
+                            acc.push_contracts(rr_net, rpc);
+                        }
+                    }
                     if target[idx] {
                         label_hits += 1;
                     }

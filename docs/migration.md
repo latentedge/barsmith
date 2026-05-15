@@ -72,6 +72,29 @@ The `--logic` / `--logic-mode` CLI surface and the internal `LogicMode` config e
 
 `--early-exit-when-reused` has been removed because it was accepted by the CLI but not implemented by the evaluator. This avoids a false safety/performance contract.
 
+### Removed legacy CLI aliases
+
+Barsmith now exposes one canonical flag name for each supported setting.
+Existing scripts should replace old compatibility aliases with the current
+names:
+
+- `--min-sample-size` -> `--min-samples`
+- `--n-jobs` -> `--workers`
+- `--resume-offset` -> `--resume-from`
+- `--limit` -> `--max-combos`
+- `--report-metrics` -> `--report`
+- `--report-top` -> `--top-k`
+- `--force-recompute` -> `--force`
+- `--enable-feature-pairs` -> `--feature-pairs`
+- `--feature-pairs-max` -> `--feature-pairs-limit`
+- `--enable-subset-pruning` -> `--subset-pruning`
+
+Barsmith intentionally rejects these aliases instead of preserving silent
+compatibility wrappers. That keeps command metadata, docs, registry records, and
+future support conversations aligned on one CLI vocabulary. The
+`--min-sample-size` alias was removed everywhere; use `--min-samples` for
+`comb`, `results`, and `select validate`.
+
 ### Run manifest required for resume
 
 Run folders now include `run_manifest.json`. Existing run folders that contain Parquet/DuckDB state but no manifest are rejected unless you pass `--force` or choose a fresh `--run-id`.

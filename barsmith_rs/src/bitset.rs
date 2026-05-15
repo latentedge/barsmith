@@ -218,6 +218,21 @@ fn gate_word_allow_out_of_bounds_true(gate: &BitsetMask, word_index: usize) -> u
     word
 }
 
+#[inline]
+fn full_gate_words(
+    gate: Option<&BitsetMask>,
+    max_len: usize,
+    max_words_len: usize,
+) -> Option<&[u64]> {
+    gate.and_then(|gate| {
+        if gate.len >= max_len && gate.words.len() >= max_words_len {
+            Some(gate.words.as_slice())
+        } else {
+            None
+        }
+    })
+}
+
 pub(crate) fn scan_bitsets_scalar_dyn_gated(
     combo_bitsets: &[&BitsetMask],
     max_len: usize,
@@ -525,6 +540,8 @@ unsafe fn scan_bitsets_neon_dyn_gated(
     } else {
         (1u64 << rem) - 1
     };
+    let full_eligible_words = full_gate_words(gate_eligible, max_len, max_words_len);
+    let full_finite_words = full_gate_words(gate_finite, max_len, max_words_len);
 
     let mut word_index = 0usize;
     while word_index + 1 < words_len {
@@ -554,11 +571,17 @@ unsafe fn scan_bitsets_neon_dyn_gated(
 
         let mut gated0 = lane0;
         let mut gated1 = lane1;
-        if let Some(gate) = gate_eligible {
+        if let Some(gate_words) = full_eligible_words {
+            gated0 &= gate_words[word_index];
+            gated1 &= gate_words[word_index + 1];
+        } else if let Some(gate) = gate_eligible {
             gated0 &= gate_word_allow_out_of_bounds_true(gate, word_index);
             gated1 &= gate_word_allow_out_of_bounds_true(gate, word_index + 1);
         }
-        if let Some(gate) = gate_finite {
+        if let Some(gate_words) = full_finite_words {
+            gated0 &= gate_words[word_index];
+            gated1 &= gate_words[word_index + 1];
+        } else if let Some(gate) = gate_finite {
             if word_index < gate.words.len() {
                 gated0 &= gate.words[word_index];
             } else {
@@ -605,10 +628,14 @@ unsafe fn scan_bitsets_neon_dyn_gated(
         }
 
         let mut gated = combined;
-        if let Some(gate) = gate_eligible {
+        if let Some(gate_words) = full_eligible_words {
+            gated &= gate_words[word_index];
+        } else if let Some(gate) = gate_eligible {
             gated &= gate_word_allow_out_of_bounds_true(gate, word_index);
         }
-        if let Some(gate) = gate_finite {
+        if let Some(gate_words) = full_finite_words {
+            gated &= gate_words[word_index];
+        } else if let Some(gate) = gate_finite {
             if word_index < gate.words.len() {
                 gated &= gate.words[word_index];
             } else {
@@ -650,6 +677,8 @@ unsafe fn scan_bitsets_neon_fixed_gated<const N: usize>(
     } else {
         (1u64 << rem) - 1
     };
+    let full_eligible_words = full_gate_words(gate_eligible, max_len, max_words_len);
+    let full_finite_words = full_gate_words(gate_finite, max_len, max_words_len);
 
     let mut word_index = 0usize;
     while word_index + 1 < words_len {
@@ -679,11 +708,17 @@ unsafe fn scan_bitsets_neon_fixed_gated<const N: usize>(
 
         let mut gated0 = lane0;
         let mut gated1 = lane1;
-        if let Some(gate) = gate_eligible {
+        if let Some(gate_words) = full_eligible_words {
+            gated0 &= gate_words[word_index];
+            gated1 &= gate_words[word_index + 1];
+        } else if let Some(gate) = gate_eligible {
             gated0 &= gate_word_allow_out_of_bounds_true(gate, word_index);
             gated1 &= gate_word_allow_out_of_bounds_true(gate, word_index + 1);
         }
-        if let Some(gate) = gate_finite {
+        if let Some(gate_words) = full_finite_words {
+            gated0 &= gate_words[word_index];
+            gated1 &= gate_words[word_index + 1];
+        } else if let Some(gate) = gate_finite {
             gated0 &= gate.words.get(word_index).copied().unwrap_or(0);
             gated1 &= gate.words.get(word_index + 1).copied().unwrap_or(0);
         }
@@ -722,14 +757,208 @@ unsafe fn scan_bitsets_neon_fixed_gated<const N: usize>(
         }
 
         let mut gated = combined;
-        if let Some(gate) = gate_eligible {
+        if let Some(gate_words) = full_eligible_words {
+            gated &= gate_words[word_index];
+        } else if let Some(gate) = gate_eligible {
             gated &= gate_word_allow_out_of_bounds_true(gate, word_index);
         }
-        if let Some(gate) = gate_finite {
+        if let Some(gate_words) = full_finite_words {
+            gated &= gate_words[word_index];
+        } else if let Some(gate) = gate_finite {
             gated &= gate.words.get(word_index).copied().unwrap_or(0);
         }
 
         let mut w = gated;
+        while w != 0 {
+            let tz = w.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w &= w - 1;
+            on_hit(idx);
+        }
+        word_index += 1;
+    }
+
+    scan_total
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "simd-eval"))]
+unsafe fn scan_bitsets_neon_dyn_precomputed_gate(
+    combo_bitsets: &[&BitsetMask],
+    max_len: usize,
+    gate: &BitsetMask,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    if combo_bitsets.is_empty() || max_len == 0 {
+        return 0;
+    }
+
+    let max_words_len = max_len.div_ceil(64);
+    let words_len = common_words_len(combo_bitsets, max_len);
+    let mut scan_total = 0usize;
+    let rem = max_len % 64;
+    let last_mask = if rem == 0 {
+        u64::MAX
+    } else {
+        (1u64 << rem) - 1
+    };
+    let gate_words = gate.words.as_slice();
+
+    let mut word_index = 0usize;
+    while word_index + 1 < words_len {
+        // SAFETY: aarch64 NEON intrinsics are only compiled for aarch64 with
+        // `simd-eval`. The caller already checked that the trade gate covers
+        // the whole scan window.
+        let mut combined = unsafe { vdupq_n_u64(u64::MAX) };
+
+        for bitset in combo_bitsets {
+            let ptr = unsafe { bitset.words.as_ptr().add(word_index) };
+            let vec = unsafe { vld1q_u64(ptr) };
+            combined = unsafe { vandq_u64(combined, vec) };
+        }
+
+        let lane0 = unsafe { vgetq_lane_u64(combined, 0) };
+        let mut lane1 = unsafe { vgetq_lane_u64(combined, 1) };
+        if word_index + 2 == max_words_len {
+            lane1 &= last_mask;
+        }
+
+        scan_total += lane0.count_ones() as usize;
+        scan_total += lane1.count_ones() as usize;
+        if (lane0 | lane1) == 0 {
+            word_index += 2;
+            continue;
+        }
+
+        let mut w0 = lane0 & gate_words[word_index];
+        while w0 != 0 {
+            let tz = w0.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w0 &= w0 - 1;
+            on_hit(idx);
+        }
+
+        let mut w1 = lane1 & gate_words[word_index + 1];
+        while w1 != 0 {
+            let tz = w1.trailing_zeros() as usize;
+            let idx = (word_index + 1) * 64 + tz;
+            w1 &= w1 - 1;
+            on_hit(idx);
+        }
+
+        word_index += 2;
+    }
+
+    while word_index < words_len {
+        let mut combined = u64::MAX;
+        for bitset in combo_bitsets {
+            combined &= bitset.words[word_index];
+        }
+        if word_index + 1 == max_words_len {
+            combined &= last_mask;
+        }
+
+        scan_total += combined.count_ones() as usize;
+        if combined == 0 {
+            word_index += 1;
+            continue;
+        }
+
+        let mut w = combined & gate_words[word_index];
+        while w != 0 {
+            let tz = w.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w &= w - 1;
+            on_hit(idx);
+        }
+        word_index += 1;
+    }
+
+    scan_total
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "simd-eval"))]
+unsafe fn scan_bitsets_neon_fixed_precomputed_gate<const N: usize>(
+    combo_bitsets: [&BitsetMask; N],
+    max_len: usize,
+    gate: &BitsetMask,
+    on_hit: &mut dyn FnMut(usize),
+) -> usize {
+    if N == 0 || max_len == 0 {
+        return 0;
+    }
+
+    let max_words_len = max_len.div_ceil(64);
+    let words_len = common_words_len(&combo_bitsets, max_len);
+    let mut scan_total = 0usize;
+    let rem = max_len % 64;
+    let last_mask = if rem == 0 {
+        u64::MAX
+    } else {
+        (1u64 << rem) - 1
+    };
+    let gate_words = gate.words.as_slice();
+
+    let mut word_index = 0usize;
+    while word_index + 1 < words_len {
+        // SAFETY: this function only compiles for aarch64 with `simd-eval`.
+        // `words_len` is bounded by the shortest input mask, and the caller
+        // has already checked that the trade gate covers the whole scan window.
+        let mut combined = unsafe { vdupq_n_u64(u64::MAX) };
+
+        for bitset in combo_bitsets {
+            let ptr = unsafe { bitset.words.as_ptr().add(word_index) };
+            let vec = unsafe { vld1q_u64(ptr) };
+            combined = unsafe { vandq_u64(combined, vec) };
+        }
+
+        let lane0 = unsafe { vgetq_lane_u64(combined, 0) };
+        let mut lane1 = unsafe { vgetq_lane_u64(combined, 1) };
+        if word_index + 2 == max_words_len {
+            lane1 &= last_mask;
+        }
+
+        scan_total += lane0.count_ones() as usize;
+        scan_total += lane1.count_ones() as usize;
+        if (lane0 | lane1) == 0 {
+            word_index += 2;
+            continue;
+        }
+
+        let mut w0 = lane0 & gate_words[word_index];
+        while w0 != 0 {
+            let tz = w0.trailing_zeros() as usize;
+            let idx = word_index * 64 + tz;
+            w0 &= w0 - 1;
+            on_hit(idx);
+        }
+
+        let mut w1 = lane1 & gate_words[word_index + 1];
+        while w1 != 0 {
+            let tz = w1.trailing_zeros() as usize;
+            let idx = (word_index + 1) * 64 + tz;
+            w1 &= w1 - 1;
+            on_hit(idx);
+        }
+
+        word_index += 2;
+    }
+
+    while word_index < words_len {
+        let mut combined = u64::MAX;
+        for bitset in combo_bitsets {
+            combined &= bitset.words[word_index];
+        }
+        if word_index + 1 == max_words_len {
+            combined &= last_mask;
+        }
+
+        scan_total += combined.count_ones() as usize;
+        if combined == 0 {
+            word_index += 1;
+            continue;
+        }
+
+        let mut w = combined & gate_words[word_index];
         while w != 0 {
             let tz = w.trailing_zeros() as usize;
             let idx = word_index * 64 + tz;
@@ -780,6 +1009,48 @@ pub(crate) fn scan_bitsets_simd_dyn_gated(
     gate_finite: Option<&BitsetMask>,
     on_hit: &mut dyn FnMut(usize),
 ) -> usize {
+    let max_words_len = max_len.div_ceil(64);
+    if gate_finite.is_none() {
+        if let Some(gate) =
+            gate_eligible.filter(|gate| gate.len >= max_len && gate.words.len() >= max_words_len)
+        {
+            unsafe {
+                return match combo_bitsets {
+                    [one] => {
+                        scan_bitsets_neon_fixed_precomputed_gate([*one], max_len, gate, on_hit)
+                    }
+                    [one, two] => scan_bitsets_neon_fixed_precomputed_gate(
+                        [*one, *two],
+                        max_len,
+                        gate,
+                        on_hit,
+                    ),
+                    [one, two, three] => scan_bitsets_neon_fixed_precomputed_gate(
+                        [*one, *two, *three],
+                        max_len,
+                        gate,
+                        on_hit,
+                    ),
+                    [one, two, three, four] => scan_bitsets_neon_fixed_precomputed_gate(
+                        [*one, *two, *three, *four],
+                        max_len,
+                        gate,
+                        on_hit,
+                    ),
+                    [one, two, three, four, five] => scan_bitsets_neon_fixed_precomputed_gate(
+                        [*one, *two, *three, *four, *five],
+                        max_len,
+                        gate,
+                        on_hit,
+                    ),
+                    _ => {
+                        scan_bitsets_neon_dyn_precomputed_gate(combo_bitsets, max_len, gate, on_hit)
+                    }
+                };
+            }
+        }
+    }
+
     unsafe {
         match combo_bitsets {
             [one] => {

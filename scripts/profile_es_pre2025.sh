@@ -22,7 +22,7 @@ run_case () {
 
   echo
   echo "== Running Barsmith: direction=${direction}, max-depth=${depth}, run-id=${label} =="
-  time cargo run -p barsmith_cli -- \
+  time cargo run --release -p barsmith_cli -- \
     comb \
     --csv "$DATA" \
     --direction "$direction" \
@@ -32,12 +32,12 @@ run_case () {
     --dataset-id es_30m_pre2025 \
     --run-id "$label" \
     --max-depth "$depth" \
-    --min-sample-size 500 \
+    --min-samples 500 \
     --date-start 2024-01-01 \
     --date-end 2024-12-31 \
     --batch-size 5000 \
     --max-combos 500 \
-    --report-metrics top10
+    --report top10
 }
 
 run_case long 1

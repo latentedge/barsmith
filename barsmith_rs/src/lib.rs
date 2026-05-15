@@ -1,3 +1,16 @@
+//! Core Barsmith engine.
+//!
+//! This crate owns prepared-dataset loading, combination enumeration,
+//! bitset-backed evaluation, resume identity, result storage, formula
+//! evaluation, and selection support. The public API is still pre-1.0: prefer
+//! the re-exported `Config`, `FeatureDescriptor`, `MaskCache`, and
+//! `PermutationPipeline` entrypoints unless a module's documentation says it is
+//! intended for direct use.
+//!
+//! Keep strategy-specific preparation outside this crate. First-party targets
+//! live in `custom_rs`, and reusable indicator math lives in
+//! `barsmith_indicators`.
+
 pub mod asset;
 pub mod backtest;
 mod batch_tuning;

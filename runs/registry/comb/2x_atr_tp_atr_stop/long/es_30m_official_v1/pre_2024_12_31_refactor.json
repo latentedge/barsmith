@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "run_kind": "comb",
+  "run_id": "pre_2024_12_31_refactor",
+  "dataset_id": "es_30m_official_v1",
+  "target": "2x_atr_tp_atr_stop",
+  "direction": "long",
+  "cutoff": null,
+  "started_at": "2026-05-15T05:36:43.660Z",
+  "completed_at": "2026-05-15T05:36:46.418Z",
+  "git_sha": "a17fab644e52cbb884c80d5dd365ad5f21de69c8",
+  "git_short_sha": "a17fab644e52",
+  "artifact_uri": null,
+  "run_path": "comb/2x_atr_tp_atr_stop/long/es_30m_official_v1/pre_2024_12_31_refactor",
+  "command_sha256": "5f28bf5e6c3299c599e5546a6e145ff0c0c3aba8765ef92fa64222c822d7849c",
+  "position_sizing": "Contracts",
+  "stop_distance_column": "atr",
+  "stop_distance_unit": "Points",
+  "risk_model": "raw_stop_distance_column",
+  "top_calmar": null,
+  "top_total_r": null,
+  "checksum_file": "checksums.sha256"
+}

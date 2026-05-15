@@ -115,6 +115,27 @@ Treat this profile as the baseline, not as proof that no better profile exists. 
 
 The 2026-05-14 release-profile audit kept the existing ThinLTO profile. On the smoke hard-gate suite, `lto = "fat"` and `panic = "abort"` did not beat the accepted same-machine baseline after their build-time cost and p95 regressions were considered. Do not change the default release profile without a new benchmark comparison.
 
+For portable binaries, build from an environment that overrides the local
+native CPU flag, then validate that binary separately from the local native
+baseline. Do not mix portable and native reports in the same regression
+comparison.
+
+```bash
+RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release -p barsmith_cli
+```
+
+Choose the portable CPU level deliberately for the target distribution. The
+local development profile remains the performance baseline for same-machine
+research runs.
+
+Plotting is also feature-gated. The default CLI includes PNG plot support; a
+leaner non-plotting binary can be built when only search, result querying, and
+CSV/JSON exports are needed:
+
+```bash
+cargo build --release -p barsmith_cli --no-default-features
+```
+
 ## Benchmark note
 
 Internal benchmark (not a guarantee): ~120B combination candidates over ~5 days on a MacBook Pro (Apple M4).

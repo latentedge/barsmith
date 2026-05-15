@@ -9,9 +9,13 @@ This repo pins a Rust toolchain for consistent formatting/linting in CI. See `ru
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check -p barsmith_cli --no-default-features
 cargo test --workspace --all-targets --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 cargo audit --deny warnings
+bash -n scripts/*.sh
+scripts/check_stale_cli_flags.sh
+scripts/check_registry_schema.sh
 scripts/golden_smoke.sh
 scripts/performance_gate.sh
 scripts/benchmark_smoke.sh
@@ -22,6 +26,8 @@ scripts/benchmark_smoke.sh
 ## Development principles
 
 - Keep CLI behavior explicit. Remove unsupported flags instead of accepting no-op compatibility shims.
+- Keep supported docs and scripts on canonical CLI flags. The stale-flag check should fail if removed aliases appear outside migration notes.
+- Keep registry records schema-current and privacy-safe. Full artifacts stay in ignored directories.
 - Keep hot loops allocation-aware and benchmarked. Prefer readable helper boundaries outside tight loops.
 - Run the Rust benchmark gate before ending performance-sensitive implementation work and before pushing it.
 - Keep formula evaluation on the shared Rust evaluator path so ranked-formula workflows do not drift from combination-search semantics.

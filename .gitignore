@@ -5,7 +5,6 @@
 # Outputs / caches
 /tmp/
 /runs/artifacts/
-/runs/registry/
 benchmarks/local-fixtures.toml
 **/*.parquet
 **/*.duckdb

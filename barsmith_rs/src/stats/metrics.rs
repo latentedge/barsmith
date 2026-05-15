@@ -140,7 +140,6 @@ pub(super) struct CoreStatsAccumulator {
     profit_count: usize,
     loss_count: usize,
     simulate_equity: bool,
-    position_sizing: PositionSizingMode,
     min_contracts: usize,
     max_contracts: Option<usize>,
     margin_per_contract_dollar: Option<f64>,
@@ -153,7 +152,6 @@ pub(super) struct CoreStatsAccumulator {
 
 impl CoreStatsAccumulator {
     pub(super) fn new(
-        position_sizing: PositionSizingMode,
         capital_dollar: Option<f64>,
         risk_pct_per_trade: Option<f64>,
         min_contracts: usize,
@@ -173,7 +171,6 @@ impl CoreStatsAccumulator {
             profit_count: 0,
             loss_count: 0,
             simulate_equity,
-            position_sizing,
             min_contracts: min_contracts.max(1),
             max_contracts,
             margin_per_contract_dollar,
@@ -185,7 +182,67 @@ impl CoreStatsAccumulator {
         }
     }
 
-    pub(super) fn push(&mut self, rr: f64, risk_per_contract_dollar: Option<f64>) {
+    #[inline(always)]
+    pub(super) fn push_fractional(&mut self, rr: f64) {
+        self.push_base(rr);
+
+        if self.simulate_equity {
+            self.apply_fractional_capital_pnl(rr);
+        }
+    }
+
+    #[inline(always)]
+    pub(super) fn push_fractional_with_equity(&mut self, rr: f64) {
+        self.push_base(rr);
+        self.apply_fractional_capital_pnl(rr);
+    }
+
+    #[inline(always)]
+    pub(super) fn push_core_only(&mut self, rr: f64) {
+        self.push_base(rr);
+    }
+
+    #[inline(always)]
+    pub(super) fn push_contracts(&mut self, rr: f64, risk_per_contract_dollar: Option<f64>) {
+        self.push_base(rr);
+
+        if !self.simulate_equity {
+            return;
+        }
+
+        let rpc = match risk_per_contract_dollar {
+            Some(v) if v.is_finite() && v > 0.0 => v,
+            _ => return,
+        };
+        let risk_budget = self.capital * self.risk_factor;
+        let raw = (risk_budget / rpc).floor();
+        let mut contracts = if raw.is_finite() && raw >= 0.0 {
+            raw as usize
+        } else {
+            0
+        };
+        if contracts < self.min_contracts {
+            contracts = self.min_contracts;
+        }
+        if let Some(max_contracts) = self.max_contracts {
+            contracts = contracts.min(max_contracts);
+        }
+        if let Some(margin) = self.margin_per_contract_dollar {
+            if margin.is_finite() && margin > 0.0 && self.capital.is_finite() && self.capital > 0.0
+            {
+                let cap = (self.capital / margin).floor();
+                if cap.is_finite() && cap >= 0.0 {
+                    contracts = contracts.min(cap as usize);
+                }
+            }
+        }
+        if contracts > 0 {
+            self.apply_capital_pnl(rr * rpc * (contracts as f64));
+        }
+    }
+
+    #[inline(always)]
+    fn push_base(&mut self, rr: f64) {
         self.total_return += rr;
         if rr > 0.0 {
             self.profit_count += 1;
@@ -202,63 +259,32 @@ impl CoreStatsAccumulator {
         if dd < self.max_drawdown {
             self.max_drawdown = dd;
         }
+    }
 
-        // Optional dollar equity simulation for true Calmar.
-        if self.simulate_equity {
-            let pnl = match self.position_sizing {
-                PositionSizingMode::Fractional => {
-                    let risk_i = self.capital * self.risk_factor;
-                    rr * risk_i
-                }
-                PositionSizingMode::Contracts => {
-                    let rpc = match risk_per_contract_dollar {
-                        Some(v) if v.is_finite() && v > 0.0 => v,
-                        _ => return,
-                    };
-                    let risk_budget = self.capital * self.risk_factor;
-                    let raw = (risk_budget / rpc).floor();
-                    let mut contracts = if raw.is_finite() && raw >= 0.0 {
-                        raw as usize
-                    } else {
-                        0
-                    };
-                    if contracts < self.min_contracts {
-                        contracts = self.min_contracts;
-                    }
-                    if let Some(max_contracts) = self.max_contracts {
-                        contracts = contracts.min(max_contracts);
-                    }
-                    if let Some(margin) = self.margin_per_contract_dollar {
-                        if margin.is_finite()
-                            && margin > 0.0
-                            && self.capital.is_finite()
-                            && self.capital > 0.0
-                        {
-                            let cap = (self.capital / margin).floor();
-                            if cap.is_finite() && cap >= 0.0 {
-                                contracts = contracts.min(cap as usize);
-                            }
-                        }
-                    }
-                    if contracts == 0 {
-                        return;
-                    }
-                    rr * rpc * (contracts as f64)
-                }
-            };
-            let next_capital = self.capital + pnl;
-            self.capital = next_capital;
-            if self.capital > self.peak_capital {
-                self.peak_capital = self.capital;
-            }
-            if self.peak_capital > 0.0 {
-                let dd_pct = ((self.capital - self.peak_capital) / self.peak_capital) * 100.0;
-                let dd_mag = -dd_pct;
-                if dd_mag > self.max_drawdown_pct_equity {
-                    self.max_drawdown_pct_equity = dd_mag;
-                }
+    #[inline(always)]
+    fn apply_fractional_capital_pnl(&mut self, rr: f64) {
+        let risk_i = self.capital * self.risk_factor;
+        self.apply_capital_pnl(rr * risk_i);
+    }
+
+    #[inline(always)]
+    fn apply_capital_pnl(&mut self, pnl: f64) {
+        self.capital += pnl;
+        if self.capital > self.peak_capital {
+            self.peak_capital = self.capital;
+        }
+        if self.peak_capital > 0.0 {
+            let dd_pct = ((self.capital - self.peak_capital) / self.peak_capital) * 100.0;
+            let dd_mag = -dd_pct;
+            if dd_mag > self.max_drawdown_pct_equity {
+                self.max_drawdown_pct_equity = dd_mag;
             }
         }
+    }
+
+    #[inline(always)]
+    pub(super) fn simulates_equity(&self) -> bool {
+        self.simulate_equity
     }
 
     pub(super) fn finalize(
@@ -398,22 +424,35 @@ fn compute_core_statistics(
     margin_per_contract_dollar: Option<f64>,
 ) -> StatSummary {
     let mut acc = CoreStatsAccumulator::new(
-        position_sizing,
         capital_dollar,
         risk_pct_per_trade,
         min_contracts,
         max_contracts,
         margin_per_contract_dollar,
     );
-    for (idx, &rr) in filtered_rr.iter().enumerate() {
-        acc.total_bars += 1;
-        let rpc = match position_sizing {
-            PositionSizingMode::Contracts => risk_per_contract_dollar
-                .and_then(|values| values.get(idx).copied())
-                .filter(|v| v.is_finite()),
-            PositionSizingMode::Fractional => None,
-        };
-        acc.push(rr, rpc);
+    match position_sizing {
+        PositionSizingMode::Fractional => {
+            if acc.simulates_equity() {
+                for &rr in filtered_rr {
+                    acc.total_bars += 1;
+                    acc.push_fractional_with_equity(rr);
+                }
+            } else {
+                for &rr in filtered_rr {
+                    acc.total_bars += 1;
+                    acc.push_core_only(rr);
+                }
+            }
+        }
+        PositionSizingMode::Contracts => {
+            for (idx, &rr) in filtered_rr.iter().enumerate() {
+                acc.total_bars += 1;
+                let rpc = risk_per_contract_dollar
+                    .and_then(|values| values.get(idx).copied())
+                    .filter(|v| v.is_finite());
+                acc.push_contracts(rr, rpc);
+            }
+        }
     }
     acc.finalize(depth, label_hits, equity_time_years)
 }

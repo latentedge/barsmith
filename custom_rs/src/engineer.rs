@@ -100,9 +100,11 @@ impl FeatureEngineer {
         let mut float_names: Vec<&'static str> = float_features.keys().copied().collect();
         float_names.sort_unstable();
         for name in float_names {
-            let values = float_features
-                .remove(name)
-                .expect("float feature value should exist");
+            let Some(values) = float_features.remove(name) else {
+                return Err(anyhow!(
+                    "internal feature assembly error: missing float values for {name}"
+                ));
+            };
             let series = Series::new(name.into(), values);
             self.frame
                 .with_column(series.into())
@@ -112,9 +114,11 @@ impl FeatureEngineer {
         let mut bool_names: Vec<&'static str> = bool_features.keys().copied().collect();
         bool_names.sort_unstable();
         for name in bool_names {
-            let values = bool_features
-                .remove(name)
-                .expect("boolean feature value should exist");
+            let Some(values) = bool_features.remove(name) else {
+                return Err(anyhow!(
+                    "internal feature assembly error: missing boolean values for {name}"
+                ));
+            };
             let series = Series::new(name.into(), values);
             self.frame
                 .with_column(series.into())

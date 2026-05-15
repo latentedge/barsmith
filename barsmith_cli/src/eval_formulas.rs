@@ -23,6 +23,7 @@ use chrono::NaiveDate;
 use serde::Serialize;
 
 use crate::cli::EvalFormulasArgs;
+#[cfg(feature = "plotting")]
 use crate::plot;
 use crate::target_semantics::{
     inferred_stop_distance_column, normalize_target, reject_ambiguous_direction_label,
@@ -123,7 +124,12 @@ pub fn run(args: &EvalFormulasArgs) -> Result<EvalRunResult> {
                 println!("Equity curves written: {}", path.display());
             }
             if args.plot {
+                #[cfg(feature = "plotting")]
                 written_files.extend(plot::render_plots(&curves, args)?);
+                #[cfg(not(feature = "plotting"))]
+                return Err(anyhow!(
+                    "plot rendering is not available in this build; rebuild barsmith_cli with the default `plotting` feature"
+                ));
             }
         }
     }

@@ -9,12 +9,23 @@ Run this before opening a behavior-changing PR:
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check -p barsmith_cli --no-default-features
 cargo test --workspace --all-targets --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 cargo audit --deny warnings
+bash -n scripts/*.sh
+scripts/check_stale_cli_flags.sh
+scripts/check_registry_schema.sh
 ```
 
 Any advisory exception must be documented in `.cargo/audit.toml` with rationale, mitigation, and a revisit trigger. If the exception depends on an optional upstream crate being inactive, verify it with `cargo tree -i <crate> -e features`. Dependency advisory handling is documented in `SECURITY.md`.
+
+The stale-flag check keeps supported docs, scripts, CI, and CLI source aligned
+with the current command surface. Historical removed-flag notes belong in
+`docs/migration.md`; supported examples should use canonical flags only.
+
+The registry schema check validates Git-trackable records under `runs/registry`
+without inspecting full private artifacts under `runs/artifacts`.
 
 ## Golden smoke
 
