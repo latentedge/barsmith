@@ -94,8 +94,10 @@ BARSMITH_PERF_BASELINE=off \
 BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate.sh
 ```
 
-The wrapper automatically compares against
-`target/barsmith-bench/baseline.json` when that file exists.
+The wrapper automatically compares the default smoke suite against
+`target/barsmith-bench/baseline.json` when that file exists. Targeted suites use
+matching local baselines, such as
+`target/barsmith-bench/select-validate-baseline.json`.
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 

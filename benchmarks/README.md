@@ -63,8 +63,10 @@ BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate
 ```
 
 `scripts/performance_gate.sh` automatically uses
-`target/barsmith-bench/baseline.json` when that file exists. Set
-`BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing the
+`target/barsmith-bench/baseline.json` for the default smoke suite when that file
+exists. Targeted suites use matching local baselines, such as
+`target/barsmith-bench/select-validate-baseline.json`. Set
+`BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing an
 accepted local baseline after a main-branch change has been reviewed.
 
 Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.

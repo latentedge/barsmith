@@ -6,7 +6,11 @@ SUITE="${BARSMITH_PERF_SUITE:-smoke}"
 SAMPLES="${BARSMITH_PERF_SAMPLES:-21}"
 WARMUPS="${BARSMITH_PERF_WARMUPS:-2}"
 REPORT="${BARSMITH_PERF_REPORT:-target/barsmith-bench/performance-gate.json}"
-DEFAULT_BASELINE="target/barsmith-bench/baseline.json"
+if [[ "$SUITE" == "smoke" ]]; then
+  DEFAULT_BASELINE="target/barsmith-bench/baseline.json"
+else
+  DEFAULT_BASELINE="target/barsmith-bench/${SUITE}-baseline.json"
+fi
 BASELINE="${BARSMITH_PERF_BASELINE:-}"
 COMPARISON="${BARSMITH_PERF_COMPARISON:-target/barsmith-bench/performance-gate-comparison.json}"
 COMPARISON_MD="${BARSMITH_PERF_COMPARISON_MD:-target/barsmith-bench/performance-gate-comparison.md}"
@@ -56,7 +60,7 @@ fi
 build_args=(--release -p barsmith_bench)
 needs_cli=false
 case "$SUITE" in
-  all|comb-cli|results-cli|strict-eval|formula-eval)
+  all|comb-cli|results-cli|strict-eval|formula-eval|select-validate|selection-workflow)
     build_args+=(-p barsmith_cli)
     needs_cli=true
     ;;

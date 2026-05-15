@@ -161,10 +161,12 @@ scripts/performance_gate.sh
 
 Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to enforce a
 same-machine comparison with `--fail-on-regression`, or rely on the wrapper's
-default: it automatically uses `target/barsmith-bench/baseline.json` when that
-file exists. Set `BARSMITH_PERF_BASELINE=off` only when intentionally creating
-or refreshing the accepted local baseline. Without a baseline file, the script
-writes the current report only.
+default: it automatically uses `target/barsmith-bench/baseline.json` for the
+default smoke suite when that file exists. Targeted suites use matching local
+baselines, such as `target/barsmith-bench/select-validate-baseline.json`. Set
+`BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing the
+accepted local baseline. Without a matching baseline file, the script writes the
+current report only.
 
 ## Local smoke benchmark
 

@@ -332,9 +332,11 @@ Use the Rust-native benchmark gate for performance-sensitive changes:
 scripts/performance_gate.sh
 ```
 
-When `target/barsmith-bench/baseline.json` exists, the gate compares against it
-with `barsmith_bench compare --fail-on-regression`. Refresh that local baseline
-only after an accepted main-branch change:
+When `target/barsmith-bench/baseline.json` exists, the default smoke gate
+compares against it with `barsmith_bench compare --fail-on-regression`.
+Targeted suites use matching local baselines, such as
+`target/barsmith-bench/select-validate-baseline.json`, when those files exist.
+Refresh a local baseline only after an accepted main-branch change:
 
 ```bash
 BARSMITH_PERF_BASELINE=off \
