@@ -168,6 +168,10 @@ baselines, such as `target/barsmith-bench/select-validate-baseline.json`. Set
 accepted local baseline. Without a matching baseline file, the script writes the
 current report only.
 
+To prevent accidental self-comparisons, the wrapper fails before running if the
+candidate report path would overwrite the active baseline. Use
+`BARSMITH_PERF_BASELINE=off` when refreshing a baseline on purpose.
+
 ## Local smoke benchmark
 
 Run a small release-mode benchmark smoke from the repo root:

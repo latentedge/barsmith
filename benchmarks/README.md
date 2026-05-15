@@ -68,6 +68,8 @@ exists. Targeted suites use matching local baselines, such as
 `target/barsmith-bench/select-validate-baseline.json`. Set
 `BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing an
 accepted local baseline after a main-branch change has been reviewed.
+The wrapper rejects `BARSMITH_PERF_REPORT` paths that would overwrite the active
+baseline unless baseline comparison is explicitly disabled.
 
 Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.
 

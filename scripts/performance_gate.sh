@@ -46,6 +46,21 @@ case "$BASELINE" in
 esac
 
 mkdir -p "$(dirname "$REPORT")"
+if [[ -n "$BASELINE" ]]; then
+  if [[ ! -f "$BASELINE" ]]; then
+    echo "Performance baseline not found: $BASELINE" >&2
+    exit 1
+  fi
+  baseline_dir="$(cd "$(dirname "$BASELINE")" && pwd -P)"
+  report_dir="$(cd "$(dirname "$REPORT")" && pwd -P)"
+  baseline_path="$baseline_dir/$(basename "$BASELINE")"
+  report_path="$report_dir/$(basename "$REPORT")"
+  if [[ "$baseline_path" == "$report_path" ]]; then
+    echo "Performance report must not overwrite the active baseline: $REPORT" >&2
+    echo "Set BARSMITH_PERF_BASELINE=off when intentionally refreshing the accepted local baseline." >&2
+    exit 1
+  fi
+fi
 rm -rf "$OUT_DIR"
 
 echo "== Barsmith performance gate =="
@@ -92,10 +107,6 @@ fi
 "$BENCH_BIN" "${bench_args[@]}"
 
 if [[ -n "$BASELINE" ]]; then
-  if [[ ! -f "$BASELINE" ]]; then
-    echo "Performance baseline not found: $BASELINE" >&2
-    exit 1
-  fi
   mkdir -p "$(dirname "$COMPARISON")" "$(dirname "$COMPARISON_MD")"
   "$BENCH_BIN" compare \
     --baseline "$BASELINE" \

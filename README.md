@@ -344,6 +344,10 @@ BARSMITH_PERF_BASELINE=off \
   scripts/performance_gate.sh
 ```
 
+The wrapper rejects attempts to write the current report to the active baseline
+path unless `BARSMITH_PERF_BASELINE=off` is set, which prevents accidental
+self-comparisons.
+
 The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For max-depth-5 refactors, also run `--suite comb-depth5`. For ATR target-generation refactors, build the benchmark runner with `--features target-generation` and run `--suite target-generation` before validating a larger local CLI profile.
 
 Performance depends heavily on:
