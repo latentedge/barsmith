@@ -3,6 +3,7 @@ mod eval_formulas;
 mod plot;
 mod protocol_cmd;
 mod results;
+mod select;
 mod standard_output;
 mod stats_detail;
 
@@ -277,5 +278,6 @@ fn main() -> Result<()> {
             init_tracing(None)?;
             protocol_cmd::run(command)
         }
+        Commands::Select(command) => select::run(command),
     }
 }

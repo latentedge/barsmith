@@ -158,6 +158,8 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
         &target,
         cutoff,
     )?);
+    let effective_trials =
+        resolve_effective_trials(args, formula_manifest.as_ref(), formulas.len());
 
     let position_sizing = args.position_sizing.to_mode();
     let stop_distance_column = if position_sizing == PositionSizingMode::Contracts {
@@ -230,6 +232,7 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
             delta: args.frs_delta,
         },
         selection_mode: selection_mode_for_stage(stage, args.selection_mode.to_mode()),
+        selection_preset: args.selection_preset.map(|preset| preset.to_preset()),
         selection_policy: SelectionPolicy {
             candidate_top_k: args.candidate_top_k,
             pre_min_trades: args.pre_min_trades,
@@ -259,7 +262,9 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
             min_psr: args.min_psr,
             min_dsr: args.min_dsr,
             min_positive_window_ratio: args.min_positive_window_ratio,
-            effective_trials: args.effective_trials,
+            effective_trials: Some(effective_trials.value),
+            effective_trials_source: Some(effective_trials.source),
+            effective_trials_warning: effective_trials.warning,
             complexity_penalty: args.complexity_penalty,
         }),
         stress_options: (args.strict_protocol || args.stress_report).then_some(StressOptions {
@@ -267,6 +272,71 @@ fn build_request(args: &EvalFormulasArgs) -> Result<FormulaEvalRequest> {
             min_expectancy: args.stress_min_expectancy,
         }),
     })
+}
+
+struct EffectiveTrialsResolution {
+    value: usize,
+    source: String,
+    warning: Option<String>,
+}
+
+fn resolve_effective_trials(
+    args: &EvalFormulasArgs,
+    manifest: Option<&FormulaExportManifest>,
+    formula_count: usize,
+) -> EffectiveTrialsResolution {
+    if let Some(value) = args.effective_trials {
+        return EffectiveTrialsResolution {
+            value: value.max(1),
+            source: "explicit_cli".to_string(),
+            warning: None,
+        };
+    }
+
+    if let Some(value) = manifest
+        .and_then(|manifest| manifest.source_processed_combinations)
+        .filter(|value| *value > 0)
+    {
+        return EffectiveTrialsResolution {
+            value: value.min(usize::MAX as u64) as usize,
+            source: "source_processed_combinations".to_string(),
+            warning: None,
+        };
+    }
+
+    if let Some(value) = manifest
+        .and_then(|manifest| manifest.source_stored_combinations)
+        .filter(|value| *value > 0)
+    {
+        return EffectiveTrialsResolution {
+            value: value.min(usize::MAX as u64) as usize,
+            source: "source_stored_combinations".to_string(),
+            warning: Some(
+                "effective trials fell back to stored source rows; discarded combinations may make DSR too optimistic"
+                    .to_string(),
+            ),
+        };
+    }
+
+    if let Some(manifest) = manifest {
+        return EffectiveTrialsResolution {
+            value: manifest.exported_rows.max(1),
+            source: "formula_exported_rows".to_string(),
+            warning: Some(
+                "effective trials fell back to exported formulas; this understates the original search space when the comb run evaluated more candidates"
+                    .to_string(),
+            ),
+        };
+    }
+
+    EffectiveTrialsResolution {
+        value: formula_count.max(1),
+        source: "evaluated_formula_count".to_string(),
+        warning: Some(
+            "effective trials used the evaluated formula count because no formula export manifest was provided"
+                .to_string(),
+        ),
+    }
 }
 
 fn validate_stage_formula_rules(

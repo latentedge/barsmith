@@ -11,6 +11,7 @@ Use this checklist for behavior-sensitive Barsmith changes.
 - Prepared dataset requirements are updated when target, eligibility, reward, or exit-index behavior changes.
 - Date filtering, direction filtering, and no-stacking behavior are tested when touched.
 - Formula parsing, formula bitsets, FRS windows, equity-curve exports, and plots are tested when `eval-formulas` behavior changes.
+- Strict selection workflow changes cover `select validate`, `select lockbox`, dry-run behavior, protocol binding, and generated workflow status.
 
 ## Resume And Storage
 
@@ -26,6 +27,7 @@ Use this checklist for behavior-sensitive Barsmith changes.
 - Before/after timing uses the same machine, toolchain, release profile, fixture, and command.
 - `scripts/performance_gate.sh` passes and writes a structured hard-gate `barsmith_bench` report.
 - `scripts/benchmark_smoke.sh` passes as a review-only CLI sanity check when CLI/runtime wiring changed.
+- `select validate` workflow changes include the `select-validate` benchmark suite or a documented reason it was skipped.
 - Stable microbenchmark comparison passes, or the regression has an explicit accepted tradeoff.
 - Max-depth-5 combination-search changes include a `comb-depth5` benchmark comparison.
 - ATR/high-low target changes include a `target-generation` benchmark comparison and parity tests for gap opens, same-bar TP/SL touches, cutoff exits, NaNs, tick rounding, long, short, and both-direction runs.

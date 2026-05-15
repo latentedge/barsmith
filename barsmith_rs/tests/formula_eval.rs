@@ -64,6 +64,7 @@ fn request(stacking_mode: StackingMode) -> FormulaEvalRequest {
             ..SelectionPolicy::default()
         },
         stage: ResearchStage::Validation,
+        selection_preset: None,
         strict_protocol: None,
         overfit_options: None,
         stress_options: None,

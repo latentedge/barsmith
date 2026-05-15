@@ -96,6 +96,12 @@ pub enum ResultRankBy {
     TotalReturn,
 }
 
+#[derive(Debug, Clone)]
+pub struct ResultStoreSummary {
+    pub processed_combinations: Option<u64>,
+    pub stored_combinations: Option<u64>,
+}
+
 impl ResultRankBy {
     fn order_expression(self) -> &'static str {
         match self {
@@ -103,6 +109,46 @@ impl ResultRankBy {
             Self::TotalReturn => "total_return",
         }
     }
+}
+
+pub fn summarize_result_store(output_dir: &Path) -> Result<ResultStoreSummary> {
+    let results_dir = output_dir.join("results_parquet");
+    let duckdb_path = output_dir.join("cumulative.duckdb");
+    if !duckdb_path.exists() {
+        return Ok(ResultStoreSummary {
+            processed_combinations: None,
+            stored_combinations: None,
+        });
+    }
+
+    let conn = Connection::open(&duckdb_path)
+        .with_context(|| format!("Unable to open {}", duckdb_path.display()))?;
+    conn.execute("SET max_expression_depth TO 100000", [])?;
+
+    let processed_combinations = conn
+        .query_row(
+            "SELECT COALESCE(SUM(processed), 0) FROM metadata",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .ok()
+        .map(|value| value.max(0) as u64);
+
+    let stored_combinations = if has_parquet_files(&results_dir)? {
+        refresh_results_view(&conn, &results_dir)?;
+        conn.query_row("SELECT COUNT(*) FROM results", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .ok()
+        .map(|value| value.max(0) as u64)
+    } else {
+        Some(0)
+    };
+
+    Ok(ResultStoreSummary {
+        processed_combinations,
+        stored_combinations,
+    })
 }
 
 pub fn query_result_store(query: &ResultQuery) -> Result<Vec<ResultRow>> {

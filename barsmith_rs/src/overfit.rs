@@ -19,6 +19,8 @@ pub struct OverfitOptions {
     pub min_dsr: f64,
     pub min_positive_window_ratio: f64,
     pub effective_trials: Option<usize>,
+    pub effective_trials_source: Option<String>,
+    pub effective_trials_warning: Option<String>,
     pub complexity_penalty: f64,
 }
 
@@ -28,6 +30,7 @@ pub struct OverfitReport {
     pub status: ResearchGateStatus,
     pub candidate_count: usize,
     pub effective_trials: usize,
+    pub effective_trials_source: String,
     pub cscv_blocks_requested: usize,
     pub cscv_blocks_applied: usize,
     pub cscv_splits: usize,

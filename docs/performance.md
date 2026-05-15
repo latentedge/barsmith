@@ -150,7 +150,7 @@ The JSON report records git SHA, dirty state, Rust version, target triple, OS/ar
 
 When reading comparison output, negative deltas are faster than the baseline and positive deltas are slower. Median is the normal-case timing and is the main signal for stable microbenchmarks. p95 is the tail sample and helps catch occasional slow paths. Mean confirms whether a p95 spike reflects the whole run or just one noisy sample.
 
-The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite comb-depth5` for max-depth-5 search changes and build `barsmith_bench` with `--features target-generation` for ATR target changes. Use `--suite smoke` for the fast pre-push gate.
+The `smoke` suite includes deterministic combination enumeration, the combination-evaluator hot path, bitset scanning, and core statistics. Use `--suite all` before risky hot-path refactors. Use `--suite comb-depth5` for max-depth-5 search changes, `--suite select-validate` for strict selection workflow changes, and build `barsmith_bench` with `--features target-generation` for ATR target changes. Use `--suite smoke` for the fast pre-push gate.
 
 The preferred wrapper is:
 

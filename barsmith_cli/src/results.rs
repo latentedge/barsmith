@@ -7,7 +7,9 @@ use barsmith_rs::protocol::{
     parse_manifest_date, sha256_file, sha256_text as protocol_sha256_text,
     validate_protocol_binding, write_json_pretty,
 };
-use barsmith_rs::storage::{ResultQuery, ResultRankBy, ResultRow, query_result_store};
+use barsmith_rs::storage::{
+    ResultQuery, ResultRankBy, ResultRow, query_result_store, summarize_result_store,
+};
 
 use crate::cli::ResultsArgs;
 
@@ -49,19 +51,12 @@ pub fn run(args: ResultsArgs) -> Result<()> {
         print_result_row(idx + 1, row);
     }
     if let Some(path) = export_formulas {
-        write_ranked_formulas(&path, &rows, &query)?;
-        println!("Ranked formulas written: {}", path.display());
         let manifest_path = export_formula_manifest.unwrap_or_else(|| {
             path.parent()
                 .unwrap_or_else(|| Path::new("."))
                 .join("formula_export_manifest.json")
         });
-        let manifest = build_formula_export_manifest(&path, &rows, &query, protocol.as_ref())?;
-        write_json_pretty(&manifest_path, &manifest)?;
-        println!(
-            "Formula export manifest written: {}",
-            manifest_path.display()
-        );
+        export_ranked_formulas(&query, &rows, &path, &manifest_path, protocol.as_ref())?;
         println!(
             "Research note: use this export only from a discovery/pre-only run before holdout evaluation."
         );
@@ -70,14 +65,32 @@ pub fn run(args: ResultsArgs) -> Result<()> {
     Ok(())
 }
 
-fn rank_by_label(rank_by: ResultRankBy) -> &'static str {
+pub(crate) fn export_ranked_formulas(
+    query: &ResultQuery,
+    rows: &[ResultRow],
+    formulas_path: &Path,
+    manifest_path: &Path,
+    protocol: Option<&ResearchProtocol>,
+) -> Result<FormulaExportManifest> {
+    write_ranked_formulas(formulas_path, rows, query)?;
+    println!("Ranked formulas written: {}", formulas_path.display());
+    let manifest = build_formula_export_manifest(formulas_path, rows, query, protocol)?;
+    write_json_pretty(manifest_path, &manifest)?;
+    println!(
+        "Formula export manifest written: {}",
+        manifest_path.display()
+    );
+    Ok(manifest)
+}
+
+pub(crate) fn rank_by_label(rank_by: ResultRankBy) -> &'static str {
     match rank_by {
         ResultRankBy::CalmarRatio => "calmar-ratio",
         ResultRankBy::TotalReturn => "total-return",
     }
 }
 
-fn normalize_target(target: &str) -> String {
+pub(crate) fn normalize_target(target: &str) -> String {
     if target == "atr_stop" {
         "2x_atr_tp_atr_stop".to_string()
     } else {
@@ -173,6 +186,7 @@ fn build_formula_export_manifest(
         .as_ref()
         .and_then(|json| json.pointer("/identity/include_date_end"))
         .and_then(|value| parse_manifest_date(Some(value)));
+    let source_search_summary = summarize_result_store(&query.output_dir).ok();
 
     Ok(FormulaExportManifest::from_draft(
         FormulaExportManifestDraft {
@@ -192,6 +206,12 @@ fn build_formula_export_manifest(
             min_calmar: query.min_calmar,
             requested_limit: query.limit,
             exported_rows: rows.len(),
+            source_processed_combinations: source_search_summary
+                .as_ref()
+                .and_then(|summary| summary.processed_combinations),
+            source_stored_combinations: source_search_summary
+                .as_ref()
+                .and_then(|summary| summary.stored_combinations),
             formulas_sha256: sha256_file(formulas_path)?,
             protocol_sha256: protocol.map(ResearchProtocol::hash).transpose()?,
         },

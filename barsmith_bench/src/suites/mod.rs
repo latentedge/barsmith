@@ -35,6 +35,7 @@ pub fn run_suite(args: &RunArgs, warnings: &mut Vec<String>) -> Result<Vec<Bench
                 Suite::CombCli,
                 Suite::ResultsCli,
                 Suite::StrictEval,
+                Suite::SelectValidate,
                 Suite::CombDepth5,
             ],
         ),
@@ -47,8 +48,9 @@ pub fn run_suite(args: &RunArgs, warnings: &mut Vec<String>) -> Result<Vec<Bench
         "comb-cli" => cli::run_comb_cli(args, warnings),
         "results-cli" => cli::run_results_cli(args, warnings),
         "strict-eval" | "formula-eval" => cli::run_strict_eval(args, warnings),
+        "select-validate" | "selection-workflow" => cli::run_select_validate(args, warnings),
         other => Err(anyhow!(
-            "unknown suite '{other}'; expected smoke, all, combinator, comb-eval, comb-depth5, target-generation, bitset, stats, comb-cli, results-cli, or strict-eval"
+            "unknown suite '{other}'; expected smoke, all, combinator, comb-eval, comb-depth5, target-generation, bitset, stats, comb-cli, results-cli, strict-eval, or select-validate"
         )),
     }
 }
@@ -63,6 +65,7 @@ enum Suite {
     CombCli,
     ResultsCli,
     StrictEval,
+    SelectValidate,
 }
 
 fn run_many(
@@ -81,6 +84,7 @@ fn run_many(
             Suite::CombCli => results.extend(cli::run_comb_cli(args, warnings)?),
             Suite::ResultsCli => results.extend(cli::run_results_cli(args, warnings)?),
             Suite::StrictEval => results.extend(cli::run_strict_eval(args, warnings)?),
+            Suite::SelectValidate => results.extend(cli::run_select_validate(args, warnings)?),
         }
     }
     Ok(results)

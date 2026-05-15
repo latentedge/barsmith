@@ -21,6 +21,9 @@ pub(super) fn write_forward_selection_markdown(
     let mut body = String::new();
     body.push_str("# Barsmith Selection Report\n\n");
     body.push_str(&format!("- Mode: `{:?}`\n", selection.mode));
+    if let Some(preset) = selection.preset {
+        body.push_str(&format!("- Preset: `{}`\n", preset.as_str()));
+    }
     body.push_str(&format!(
         "- Candidate cap: `{}`\n",
         selection.policy.candidate_top_k
@@ -160,6 +163,10 @@ pub(super) fn write_overfit_markdown(
         overfit.effective_trials
     ));
     body.push_str(&format!(
+        "- Effective trials source: `{}`\n",
+        overfit.effective_trials_source
+    ));
+    body.push_str(&format!(
         "- CSCV blocks: `{}` of requested `{}`\n",
         overfit.cscv_blocks_applied, overfit.cscv_blocks_requested
     ));
@@ -289,6 +296,7 @@ pub(super) fn write_forward_summary(
     report: &FormulaEvaluationReport,
     written_files: &[PathBuf],
     completed_at: &str,
+    workflow_status: &str,
 ) -> Result<()> {
     let mut summary = String::new();
     summary.push_str("# Barsmith Forward-Test Summary\n\n");
@@ -309,6 +317,7 @@ pub(super) fn write_forward_summary(
     }
     summary.push_str(&format!("- Rank metric: `{:?}`\n", args.rank_by));
     summary.push_str(&format!("- Stage: `{}`\n", report.stage.as_str()));
+    summary.push_str(&format!("- Workflow status: `{workflow_status}`\n"));
     summary.push_str(&format!(
         "- Strict protocol: `{}`\n",
         report
@@ -371,6 +380,9 @@ fn push_selection_summary(summary: &mut String, report: &FormulaEvaluationReport
         return;
     };
     summary.push_str(&format!("- Mode: `{:?}`\n", selection.mode));
+    if let Some(preset) = selection.preset {
+        summary.push_str(&format!("- Preset: `{}`\n", preset.as_str()));
+    }
     summary.push_str(&format!(
         "- Candidate cap: `{}`\n",
         selection.policy.candidate_top_k
@@ -431,6 +443,10 @@ fn push_overfit_summary(summary: &mut String, report: &FormulaEvaluationReport) 
     summary.push_str(&format!(
         "- Effective trials: `{}`\n",
         overfit.effective_trials
+    ));
+    summary.push_str(&format!(
+        "- Effective trials source: `{}`\n",
+        overfit.effective_trials_source
     ));
     summary.push_str(&format!("- CSCV splits: `{}`\n", overfit.cscv_splits));
     summary.push_str(&format!("- PBO: `{}`\n", optional_metric(overfit.pbo)));

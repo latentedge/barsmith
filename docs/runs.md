@@ -116,8 +116,11 @@ Equity-curve CSVs and plots are derived from evaluated formula rows after
 scoring, so they do not affect the combination-search hot path or resume state.
 
 The default `holdout-confirm` selection mode chooses from the pre-window rank
-and uses post-window metrics as gates. Use `docs/research-protocol.md` for the
-recommended workflow and lockbox guidance.
+and uses post-window metrics as gates. Use `barsmith_cli select validate` for
+the recommended strict path after discovery runs; it exports candidates, binds
+the formula manifest to the protocol, runs validation, and writes the same
+forward-test output structure. Use `docs/selection.md` and
+`docs/research-protocol.md` for the lockbox workflow.
 
 For holdout-safe evaluation, the source `comb` run that produced exported
 formulas should also be limited to the discovery/pre window, usually with
@@ -127,7 +130,7 @@ post or lockbox period into the candidate set.
 Strict protocol runs add `protocol_validation.json`, `overfit_report.json`,
 `stress_report.json`, and human-readable `reports/overfit.md`,
 `reports/stress.md`, or `reports/lockbox.md` when applicable. Registry records
-store protocol hashes, formula-export manifest hashes, stage, lockbox attempt
+store protocol hashes, formula-export manifest hashes, workflow status, stage, lockbox attempt
 status, overfit status, stress status, PBO, PSR, DSR, and effective-trials
 metadata without embedding raw formula text.
 

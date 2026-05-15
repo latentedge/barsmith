@@ -24,7 +24,10 @@ use crate::overfit::{
     probabilistic_sharpe_ratio,
 };
 use crate::protocol::{ResearchStage, StrictProtocolValidation, sha256_text};
-use crate::selection::{SelectionMode, SelectionPolicy, SelectionReport, build_selection_report};
+use crate::selection::{
+    SelectionMode, SelectionPolicy, SelectionPreset, SelectionReport,
+    build_selection_report_with_preset,
+};
 use crate::stats::{EvaluationContext, StatSummary, evaluate_combination_indices};
 use crate::stress::{StressOptions, StressReport, StressScenarioResult};
 
@@ -71,6 +74,7 @@ pub struct FormulaEvalRequest {
     pub frs_scope: FrsScope,
     pub frs_options: FrsOptions,
     pub selection_mode: SelectionMode,
+    pub selection_preset: Option<SelectionPreset>,
     pub selection_policy: SelectionPolicy,
     pub stage: ResearchStage,
     pub strict_protocol: Option<StrictProtocolValidation>,
@@ -334,8 +338,9 @@ pub fn run_formula_evaluation(request: &FormulaEvalRequest) -> Result<FormulaEva
     let mut post = evaluate_window(&full_data, request, &post_window)?;
     attach_frs(&mut post.results, &frs_post);
     sort_results(&mut post.results, request.rank_by, Some(&previous_ranks));
-    let selection = build_selection_report(
+    let selection = build_selection_report_with_preset(
         request.selection_mode,
+        request.selection_preset,
         request.selection_policy,
         &pre,
         &post,
@@ -391,6 +396,10 @@ fn compute_overfit_report(
     let effective_trials = options
         .effective_trials
         .unwrap_or_else(|| request.formulas.len().max(candidate_count).max(1));
+    let effective_trials_source = options
+        .effective_trials_source
+        .clone()
+        .unwrap_or_else(|| "evaluated_formula_count".to_string());
     let selected_formula = selection
         .and_then(|selection| selection.selected.as_ref())
         .map(|selected| selected.formula.clone())
@@ -398,6 +407,9 @@ fn compute_overfit_report(
 
     if candidate_count < 2 {
         warnings.push("PBO requires at least two candidate formulas".to_string());
+    }
+    if let Some(warning) = &options.effective_trials_warning {
+        warnings.push(warning.clone());
     }
 
     let block_windows = chronological_blocks(full_data, options.cscv_blocks)?;
@@ -559,6 +571,7 @@ fn compute_overfit_report(
         status,
         candidate_count,
         effective_trials,
+        effective_trials_source,
         cscv_blocks_requested: options.cscv_blocks,
         cscv_blocks_applied: applied_blocks.len(),
         cscv_splits: decisions.len(),

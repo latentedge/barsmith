@@ -125,6 +125,72 @@ pub fn run_strict_eval(
     )?])
 }
 
+pub fn run_select_validate(
+    args: &RunArgs,
+    _warnings: &mut Vec<String>,
+) -> Result<Vec<BenchmarkResult>> {
+    let binary = ensure_barsmith_cli(args)?;
+    let fixture_sha = sha256_file(&args.fixture_csv).ok();
+    let fixture_root = args.work_dir.join("select-validate-fixture");
+    let output_dir = run_select_discovery_fixture(
+        &binary,
+        args,
+        &fixture_root,
+        "select_bench_source",
+        "discovery",
+    )?;
+    let protocol_path = fixture_root.join("research_protocol.json");
+    write_select_validate_protocol(&protocol_path)?;
+
+    let mut sample = 0usize;
+    let command = select_validate_command_string(
+        &binary,
+        args,
+        &output_dir,
+        &output_dir.join("barsmith_prepared.csv"),
+        &protocol_path,
+        "<sample>",
+    );
+    Ok(vec![measure(
+        BenchmarkSpec {
+            suite: "select-validate".to_string(),
+            name: "tiny-strict-selection-workflow".to_string(),
+            fixture_tier: "A".to_string(),
+            fixture_label: args.fixture_csv.display().to_string(),
+            fixture_sha256: fixture_sha,
+            command: Some(command),
+            iterations_per_sample: 1,
+            regression_policy: RegressionPolicy::ReviewOnly,
+            notes: vec![
+                "Runs the strict select validate wrapper over a prepared tiny discovery result store."
+                    .to_string(),
+            ],
+        },
+        args,
+        || {
+            sample += 1;
+            let runs_root = args
+                .work_dir
+                .join("select-validate")
+                .join(format!("sample-{sample}"));
+            let command_args = select_validate_args(
+                args,
+                SelectValidateFixture {
+                    source_output: &output_dir,
+                    prepared: &output_dir.join("barsmith_prepared.csv"),
+                    protocol: &protocol_path,
+                    runs_root: &runs_root,
+                    registry_dir: &runs_root.join("registry"),
+                    dataset_id: "select_bench_source",
+                    run_id: "validation",
+                },
+            );
+            run_child(&binary, &command_args)?;
+            Ok(1)
+        },
+    )?])
+}
+
 fn ensure_barsmith_cli(args: &RunArgs) -> Result<PathBuf> {
     if let Some(binary) = &args.barsmith_bin {
         if binary.is_file() {
@@ -153,6 +219,31 @@ fn default_binary_path() -> PathBuf {
     target_dir
         .join("release")
         .join(format!("barsmith_cli{}", std::env::consts::EXE_SUFFIX))
+}
+
+fn run_select_discovery_fixture(
+    binary: &Path,
+    args: &RunArgs,
+    runs_root: &Path,
+    dataset_id: &str,
+    run_id: &str,
+) -> Result<PathBuf> {
+    let output_dir = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join(dataset_id)
+        .join(run_id);
+    if runs_root.exists() {
+        fs::remove_dir_all(runs_root)
+            .with_context(|| format!("failed to remove {}", runs_root.display()))?;
+    }
+    let registry_dir = runs_root.join("registry");
+    let mut command_args = comb_args(args, runs_root, &registry_dir, dataset_id, run_id);
+    set_arg_value(&mut command_args, "--min-samples", "1");
+    command_args.extend(["--date-end".to_string(), "2024-02-29".to_string()]);
+    run_child(binary, &command_args)?;
+    Ok(output_dir)
 }
 
 fn run_comb_fixture(
@@ -206,7 +297,7 @@ fn comb_args(
         "--max-depth".to_string(),
         args.max_depth.to_string(),
         "--min-samples".to_string(),
-        args.min_samples.to_string(),
+        "1".to_string(),
         "--batch-size".to_string(),
         args.batch_size.to_string(),
         "--workers".to_string(),
@@ -220,6 +311,14 @@ fn comb_args(
         "--no-file-log".to_string(),
         "--force".to_string(),
     ]
+}
+
+fn set_arg_value(args: &mut [String], flag: &str, value: &str) {
+    if let Some(index) = args.iter().position(|arg| arg == flag) {
+        if let Some(slot) = args.get_mut(index + 1) {
+            *slot = value.to_string();
+        }
+    }
 }
 
 fn results_args(output_dir: &Path) -> Vec<String> {
@@ -269,10 +368,26 @@ fn write_strict_eval_fixture(protocol_path: &Path, manifest_path: &Path) -> Resu
         min_calmar: None,
         requested_limit: 3,
         exported_rows: 3,
+        source_processed_combinations: None,
+        source_stored_combinations: None,
         formulas_sha256: "benchmark-formula-fixture".to_string(),
         protocol_sha256: Some(protocol_hash),
     });
     write_json_pretty(manifest_path, &manifest)
+}
+
+fn write_select_validate_protocol(protocol_path: &Path) -> Result<()> {
+    let protocol = ResearchProtocol::from_draft(ResearchProtocolDraft {
+        dataset_id: "select_bench_source".to_string(),
+        target: "next_bar_color_and_wicks".to_string(),
+        direction: Some("long".to_string()),
+        engine: Some("builtin".to_string()),
+        discovery: window(2024, 1, 1, 2024, 2, 29)?,
+        validation: window(2024, 3, 1, 2024, 3, 31)?,
+        lockbox: window(2024, 4, 1, 2024, 4, 14)?,
+        candidate_top_k: Some(3),
+    });
+    write_json_pretty(protocol_path, &protocol)
 }
 
 fn strict_eval_args(
@@ -324,6 +439,56 @@ fn strict_eval_args(
     ]
 }
 
+struct SelectValidateFixture<'a> {
+    source_output: &'a Path,
+    prepared: &'a Path,
+    protocol: &'a Path,
+    runs_root: &'a Path,
+    registry_dir: &'a Path,
+    dataset_id: &'a str,
+    run_id: &'a str,
+}
+
+fn select_validate_args(args: &RunArgs, fixture: SelectValidateFixture<'_>) -> Vec<String> {
+    vec![
+        "select".to_string(),
+        "validate".to_string(),
+        "--source-output-dir".to_string(),
+        fixture.source_output.display().to_string(),
+        "--prepared".to_string(),
+        fixture.prepared.display().to_string(),
+        "--target".to_string(),
+        "next_bar_color_and_wicks".to_string(),
+        "--direction".to_string(),
+        "long".to_string(),
+        "--cutoff".to_string(),
+        "2024-02-29".to_string(),
+        "--research-protocol".to_string(),
+        fixture.protocol.display().to_string(),
+        "--preset".to_string(),
+        "exploratory".to_string(),
+        "--candidate-top-k".to_string(),
+        "3".to_string(),
+        "--min-samples".to_string(),
+        args.min_samples.to_string(),
+        "--pre-min-trades".to_string(),
+        "1".to_string(),
+        "--post-min-trades".to_string(),
+        "0".to_string(),
+        "--post-warn-below-trades".to_string(),
+        "0".to_string(),
+        "--runs-root".to_string(),
+        fixture.runs_root.display().to_string(),
+        "--registry-dir".to_string(),
+        fixture.registry_dir.display().to_string(),
+        "--dataset-id".to_string(),
+        fixture.dataset_id.to_string(),
+        "--run-id".to_string(),
+        fixture.run_id.to_string(),
+        "--no-file-log".to_string(),
+    ]
+}
+
 fn run_child(binary: &Path, args: &[String]) -> Result<()> {
     let output = Command::new(binary)
         .args(args)
@@ -371,6 +536,33 @@ fn strict_eval_command_string(
             Path::new("<manifest>"),
             &root,
             &registry_dir,
+        ),
+    )
+}
+
+fn select_validate_command_string(
+    binary: &Path,
+    args: &RunArgs,
+    source_output: &Path,
+    prepared: &Path,
+    protocol: &Path,
+    sample: &str,
+) -> String {
+    let root = args.work_dir.join("select-validate").join(sample);
+    let registry_dir = root.join("registry");
+    command_string(
+        binary,
+        &select_validate_args(
+            args,
+            SelectValidateFixture {
+                source_output,
+                prepared,
+                protocol,
+                runs_root: &root,
+                registry_dir: &registry_dir,
+                dataset_id: "select_bench_source",
+                run_id: "validation",
+            },
         ),
     )
 }

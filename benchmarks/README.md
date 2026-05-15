@@ -40,6 +40,7 @@ Additional targeted suites are available for performance-sensitive areas that ar
 
 - `comb-depth5`: starts the synthetic evaluator at depth 5 so max-depth-5 searches are measured directly.
 - `target-generation`: measures `2x_atr_tp_atr_stop` ATR target construction on synthetic OHLCV/ATR data. Build with `--features target-generation` when running this suite.
+- `select-validate`: runs the strict selection workflow over a tiny discovery result store. It is review-only because it includes CLI startup, storage, and filesystem noise.
 
 Run the broader local suite:
 

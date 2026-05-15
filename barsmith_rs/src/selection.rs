@@ -18,6 +18,24 @@ impl SelectionMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SelectionPreset {
+    Exploratory,
+    Institutional,
+    Custom,
+}
+
+impl SelectionPreset {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exploratory => "exploratory",
+            Self::Institutional => "institutional",
+            Self::Custom => "custom",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SelectionPolicy {
     pub candidate_top_k: usize,
@@ -155,6 +173,7 @@ pub struct SelectionDiagnostic {
 #[derive(Debug, Clone, Serialize)]
 pub struct SelectionReport {
     pub mode: SelectionMode,
+    pub preset: Option<SelectionPreset>,
     pub policy: SelectionPolicy,
     pub selected: Option<SelectionDecision>,
     pub decisions: Vec<SelectionDecision>,
@@ -164,6 +183,16 @@ pub struct SelectionReport {
 
 pub fn build_selection_report(
     mode: SelectionMode,
+    policy: SelectionPolicy,
+    pre: &FormulaWindowReport,
+    post: &FormulaWindowReport,
+) -> Option<SelectionReport> {
+    build_selection_report_with_preset(mode, None, policy, pre, post)
+}
+
+pub fn build_selection_report_with_preset(
+    mode: SelectionMode,
+    preset: Option<SelectionPreset>,
     policy: SelectionPolicy,
     pre: &FormulaWindowReport,
     post: &FormulaWindowReport,
@@ -235,6 +264,7 @@ pub fn build_selection_report(
 
     Some(SelectionReport {
         mode,
+        preset,
         policy,
         selected,
         decisions,

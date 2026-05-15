@@ -46,7 +46,7 @@ than formula text so private formulas do not need to be committed.
 Non-finite metrics are written explicitly as strings such as `Inf`, `-Inf`, or
 `NaN` rather than being silently converted to JSON `null`.
 
-`eval-formulas` uses the same standard run-folder contract:
+`eval-formulas` and `select validate` use the same standard run-folder contract:
 
 ```text
 runs/artifacts/
@@ -60,6 +60,8 @@ runs/artifacts/
             run_manifest.json
             checksums.sha256
             barsmith.log
+            candidate_formulas.txt
+            formula_export_manifest.json
             formula_results.csv
             formula_results.json
             selection_report.json
@@ -85,7 +87,9 @@ runs/artifacts/
 
 The matching registry record is written under
 `runs/registry/forward-test/<target>/<dataset-id>/<cutoff>/<run-id>.json`.
-Registry records hash formulas instead of embedding the formula text.
+Registry records hash formulas instead of embedding the formula text. Strict
+selection records include `workflow_status` so validation and lockbox evidence
+can be audited without reading terminal output.
 
 Common forward-test outputs are:
 
@@ -97,6 +101,8 @@ Common forward-test outputs are:
 - protocol validation JSON: strict protocol and provenance decision details
 - overfit report JSON/CSV/Markdown: effective trials, PBO/CSCV, PSR, DSR, and warnings
 - stress report JSON/CSV/Markdown: cost, slippage, and sizing stress scenarios with pass/fail status
+- candidate formulas text: source discovery candidates exported by `select validate`
+- formula export manifest: protocol-bound provenance plus source search accounting
 - selection markdown: human-readable selection summary under `reports/selection.md`
 - FRS summary CSV: one row per formula and FRS scope
 - FRS window CSV: annual/window components used by FRS
@@ -136,6 +142,9 @@ research note; `eval-formulas` ignores those comments. The command also writes
 `formula_export_manifest.json` for strict protocol validation. Manifest schema
 version `2` uses `source_output_dir_path_sha256` to make clear that this value
 hashes the source run folder path string, not directory contents.
+
+For certification-style research, prefer `barsmith_cli select validate`; it
+performs the export and strict evaluation in one auditable run folder.
 
 You can also query `cumulative.duckdb` with DuckDB’s CLI:
 

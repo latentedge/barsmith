@@ -12,10 +12,10 @@ use barsmith_rs::config::{
 };
 use barsmith_rs::formula_eval::{EquityCurveWindowSelection, FrsScope, RankBy};
 use barsmith_rs::protocol::ResearchStage;
-use barsmith_rs::selection::SelectionMode;
+use barsmith_rs::selection::{SelectionMode, SelectionPreset};
 
-const DEFAULT_CAPITAL_DOLLAR: f64 = 100_000.0;
-const DEFAULT_RISK_PCT_PER_TRADE: f64 = 1.0;
+pub const DEFAULT_CAPITAL_DOLLAR: f64 = 100_000.0;
+pub const DEFAULT_RISK_PCT_PER_TRADE: f64 = 1.0;
 pub const DEFAULT_RUNS_ROOT: &str = "runs/artifacts";
 pub const DEFAULT_REGISTRY_DIR: &str = "runs/registry";
 
@@ -45,6 +45,9 @@ pub enum Commands {
     /// Create and inspect strict research protocol manifests
     #[command(subcommand, name = "protocol")]
     Protocol(ProtocolCommand),
+    /// Strict choose-the-best workflow for validation and lockbox evidence
+    #[command(subcommand, name = "select")]
+    Select(SelectCommand),
 }
 
 #[derive(Subcommand, Debug)]
@@ -58,6 +61,412 @@ pub enum ProtocolCommand {
     /// Print the important protocol fields
     #[command(name = "explain")]
     Explain(ProtocolValidateArgs),
+}
+
+#[derive(Subcommand, Debug)]
+// These structs mirror performance-sensitive eval options, but parsing them is
+// a startup-only concern.
+#[allow(clippy::large_enum_variant)]
+pub enum SelectCommand {
+    /// Export discovery candidates and run strict holdout validation
+    #[command(name = "validate")]
+    Validate(Box<SelectValidateArgs>),
+    /// Evaluate one frozen selected formula against lockbox/live-shadow data
+    #[command(name = "lockbox")]
+    Lockbox(Box<SelectLockboxArgs>),
+    /// Explain the strict selection workflow for a protocol file
+    #[command(name = "explain")]
+    Explain(SelectExplainArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct SelectExplainArgs {
+    /// Path to research_protocol.json.
+    #[arg(long = "protocol", value_hint = clap::ValueHint::FilePath)]
+    pub protocol: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+pub struct SelectValidateArgs {
+    /// Discovery/pre-only comb run folder containing cumulative.duckdb.
+    #[arg(long = "source-output-dir", value_hint = clap::ValueHint::DirPath)]
+    pub source_output_dir: PathBuf,
+
+    /// Prepared CSV used for validation. Use a full prepared dataset when validating post rows.
+    #[arg(long = "prepared", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub prepared_path: PathBuf,
+
+    #[arg(long, default_value = "2x_atr_tp_atr_stop")]
+    pub target: String,
+
+    #[arg(long, default_value = "long")]
+    pub direction: DirectionValue,
+
+    /// Cutoff date. Pre window is <= cutoff; post window is > cutoff.
+    #[arg(long, default_value = "2024-12-31")]
+    pub cutoff: String,
+
+    /// Strict research protocol JSON.
+    #[arg(long = "research-protocol", value_hint = clap::ValueHint::FilePath)]
+    pub research_protocol: PathBuf,
+
+    /// Policy preset for selection gates.
+    #[arg(long = "preset", value_enum, default_value = "institutional")]
+    pub preset: SelectionPresetValue,
+
+    /// Print the export/evaluation plan without writing formulas or run artifacts.
+    #[arg(long = "dry-run", default_value_t = false)]
+    pub dry_run: bool,
+
+    /// Source ranking metric used when exporting discovery candidates.
+    #[arg(long = "source-rank-by", value_enum, default_value = "total-return")]
+    pub source_rank_by: ResultRankByValue,
+
+    #[arg(long = "min-samples", alias = "min-sample-size", default_value_t = 500)]
+    pub min_samples: usize,
+
+    #[arg(long = "min-win-rate", default_value_t = 0.0)]
+    pub min_win_rate: f64,
+
+    #[arg(long = "source-max-drawdown", default_value_t = 30.0)]
+    pub source_max_drawdown: f64,
+
+    #[arg(long = "source-min-calmar")]
+    pub source_min_calmar: Option<f64>,
+
+    #[arg(long = "candidate-top-k")]
+    pub candidate_top_k: Option<usize>,
+
+    #[arg(long = "pre-min-trades")]
+    pub pre_min_trades: Option<usize>,
+
+    #[arg(long = "post-min-trades")]
+    pub post_min_trades: Option<usize>,
+
+    #[arg(long = "post-warn-below-trades")]
+    pub post_warn_below_trades: Option<usize>,
+
+    #[arg(long = "pre-min-total-r")]
+    pub pre_min_total_r: Option<f64>,
+
+    #[arg(long = "post-min-total-r")]
+    pub post_min_total_r: Option<f64>,
+
+    #[arg(long = "pre-min-expectancy")]
+    pub pre_min_expectancy: Option<f64>,
+
+    #[arg(long = "post-min-expectancy")]
+    pub post_min_expectancy: Option<f64>,
+
+    #[arg(long = "max-drawdown-r")]
+    pub selection_max_drawdown_r: Option<f64>,
+
+    #[arg(long = "min-pre-frs")]
+    pub min_pre_frs: Option<f64>,
+
+    #[arg(long = "max-return-degradation")]
+    pub max_return_degradation: Option<f64>,
+
+    #[arg(long = "max-single-trade-contribution")]
+    pub max_single_trade_contribution: Option<f64>,
+
+    #[arg(long = "max-formula-depth")]
+    pub max_formula_depth: Option<usize>,
+
+    #[arg(long = "min-density-per-1000-bars")]
+    pub min_density_per_1000_bars: Option<f64>,
+
+    #[arg(long = "complexity-penalty", default_value_t = 0.0)]
+    pub complexity_penalty: f64,
+
+    #[arg(long = "embargo-bars", default_value_t = 0)]
+    pub embargo_bars: usize,
+
+    #[arg(long = "no-purge-cross-boundary-exits", default_value_t = false)]
+    pub no_purge_cross_boundary_exits: bool,
+
+    #[arg(long = "rank-by", value_enum, default_value = "frs")]
+    pub rank_by: FormulaRankByValue,
+
+    #[arg(long = "no-frs", default_value_t = false)]
+    pub no_frs: bool,
+
+    #[arg(
+        long = "frs-scope",
+        alias = "frs-period",
+        value_enum,
+        default_value = "all"
+    )]
+    pub frs_scope: FrsScopeValue,
+
+    #[arg(long = "frs-nmin", default_value_t = 30)]
+    pub frs_nmin: usize,
+
+    #[arg(long = "cscv-blocks", default_value_t = 6)]
+    pub cscv_blocks: usize,
+
+    #[arg(long = "cscv-max-splits", default_value_t = 64)]
+    pub cscv_max_splits: usize,
+
+    #[arg(long = "overfit-candidate-top-k")]
+    pub overfit_candidate_top_k: Option<usize>,
+
+    #[arg(long = "max-pbo", default_value_t = 0.25)]
+    pub max_pbo: f64,
+
+    #[arg(long = "min-psr", default_value_t = 0.95)]
+    pub min_psr: f64,
+
+    #[arg(long = "min-dsr", default_value_t = 0.95)]
+    pub min_dsr: f64,
+
+    #[arg(long = "min-positive-window-ratio", default_value_t = 0.5)]
+    pub min_positive_window_ratio: f64,
+
+    #[arg(long = "effective-trials")]
+    pub effective_trials: Option<usize>,
+
+    #[arg(long = "stress-min-total-r", default_value_t = 0.0)]
+    pub stress_min_total_r: f64,
+
+    #[arg(long = "stress-min-expectancy", default_value_t = 0.0)]
+    pub stress_min_expectancy: f64,
+
+    #[arg(long = "report-top", default_value_t = 50)]
+    pub report_top: usize,
+
+    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath, default_value = DEFAULT_RUNS_ROOT)]
+    pub runs_root: PathBuf,
+
+    #[arg(long = "dataset-id")]
+    pub dataset_id: Option<String>,
+
+    #[arg(long = "run-id")]
+    pub run_id: Option<String>,
+
+    #[arg(long = "run-slug")]
+    pub run_slug: Option<String>,
+
+    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath, default_value = DEFAULT_REGISTRY_DIR)]
+    pub registry_dir: PathBuf,
+
+    #[arg(long = "artifact-uri")]
+    pub artifact_uri: Option<String>,
+
+    #[arg(long = "checksum-artifacts", default_value_t = false)]
+    pub checksum_artifacts: bool,
+
+    #[arg(long = "no-file-log", default_value_t = false)]
+    pub no_file_log: bool,
+
+    #[arg(long = "rr-column")]
+    pub rr_column: Option<String>,
+
+    #[arg(long = "stacking-mode", value_enum, default_value = "no-stacking")]
+    pub stacking_mode: StackingModeValue,
+
+    #[arg(long = "equity-curves-top-k", default_value_t = 10)]
+    pub equity_curves_top_k: usize,
+
+    #[arg(long = "plot", default_value_t = false)]
+    pub plot: bool,
+
+    #[arg(long = "plot-mode", value_enum, default_value = "individual")]
+    pub plot_mode: PlotModeValue,
+
+    #[arg(long = "max-drawdown")]
+    pub max_drawdown: Option<f64>,
+
+    #[arg(long = "min-calmar")]
+    pub min_calmar: Option<f64>,
+
+    #[arg(long = "asset")]
+    pub asset: Option<String>,
+
+    #[arg(long = "position-sizing", value_enum, default_value = "fractional")]
+    pub position_sizing: PositionSizingValue,
+
+    #[arg(long = "stop-distance-column")]
+    pub stop_distance_column: Option<String>,
+
+    #[arg(long = "stop-distance-unit", value_enum, default_value = "points")]
+    pub stop_distance_unit: StopDistanceUnitValue,
+
+    #[arg(long = "min-contracts", default_value_t = 1)]
+    pub min_contracts: usize,
+
+    #[arg(long = "max-contracts")]
+    pub max_contracts: Option<usize>,
+
+    #[arg(long = "margin-per-contract-dollar")]
+    pub margin_per_contract_dollar: Option<f64>,
+
+    #[arg(long = "commission-per-trade-dollar")]
+    pub commission_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "slippage-per-trade-dollar")]
+    pub slippage_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "cost-per-trade-dollar")]
+    pub cost_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "no-costs", default_value_t = false)]
+    pub no_costs: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct SelectLockboxArgs {
+    #[arg(long = "prepared", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub prepared_path: PathBuf,
+
+    #[arg(long = "formulas", value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub formulas_path: PathBuf,
+
+    #[arg(long, default_value = "2x_atr_tp_atr_stop")]
+    pub target: String,
+
+    #[arg(long = "cutoff", default_value = "2024-12-31")]
+    pub cutoff: String,
+
+    #[arg(long = "stage", value_enum, default_value = "lockbox")]
+    pub stage: LockboxStageValue,
+
+    #[arg(long = "research-protocol", value_hint = clap::ValueHint::FilePath)]
+    pub research_protocol: PathBuf,
+
+    #[arg(long = "formula-export-manifest", value_hint = clap::ValueHint::FilePath)]
+    pub formula_export_manifest: PathBuf,
+
+    #[arg(long = "ack-rerun-lockbox", default_value_t = false)]
+    pub ack_rerun_lockbox: bool,
+
+    #[arg(long = "rr-column")]
+    pub rr_column: Option<String>,
+
+    #[arg(long = "stacking-mode", value_enum, default_value = "no-stacking")]
+    pub stacking_mode: StackingModeValue,
+
+    #[arg(long = "report-top", default_value_t = 50)]
+    pub report_top: usize,
+
+    #[arg(long = "runs-root", value_hint = clap::ValueHint::DirPath, default_value = DEFAULT_RUNS_ROOT)]
+    pub runs_root: PathBuf,
+
+    #[arg(long = "dataset-id")]
+    pub dataset_id: Option<String>,
+
+    #[arg(long = "run-id")]
+    pub run_id: Option<String>,
+
+    #[arg(long = "run-slug")]
+    pub run_slug: Option<String>,
+
+    #[arg(long = "registry-dir", value_hint = clap::ValueHint::DirPath, default_value = DEFAULT_REGISTRY_DIR)]
+    pub registry_dir: PathBuf,
+
+    #[arg(long = "artifact-uri")]
+    pub artifact_uri: Option<String>,
+
+    #[arg(long = "checksum-artifacts", default_value_t = false)]
+    pub checksum_artifacts: bool,
+
+    #[arg(long = "no-file-log", default_value_t = false)]
+    pub no_file_log: bool,
+
+    #[arg(long = "rank-by", value_enum, default_value = "frs")]
+    pub rank_by: FormulaRankByValue,
+
+    #[arg(long = "no-frs", default_value_t = false)]
+    pub no_frs: bool,
+
+    #[arg(
+        long = "frs-scope",
+        alias = "frs-period",
+        value_enum,
+        default_value = "all"
+    )]
+    pub frs_scope: FrsScopeValue,
+
+    #[arg(long = "frs-nmin", default_value_t = 30)]
+    pub frs_nmin: usize,
+
+    #[arg(long = "cscv-blocks", default_value_t = 6)]
+    pub cscv_blocks: usize,
+
+    #[arg(long = "cscv-max-splits", default_value_t = 64)]
+    pub cscv_max_splits: usize,
+
+    #[arg(long = "overfit-candidate-top-k", default_value_t = 1)]
+    pub overfit_candidate_top_k: usize,
+
+    #[arg(long = "max-pbo", default_value_t = 0.25)]
+    pub max_pbo: f64,
+
+    #[arg(long = "min-psr", default_value_t = 0.95)]
+    pub min_psr: f64,
+
+    #[arg(long = "min-dsr", default_value_t = 0.95)]
+    pub min_dsr: f64,
+
+    #[arg(long = "min-positive-window-ratio", default_value_t = 0.5)]
+    pub min_positive_window_ratio: f64,
+
+    #[arg(long = "effective-trials")]
+    pub effective_trials: Option<usize>,
+
+    #[arg(long = "stress-min-total-r", default_value_t = 0.0)]
+    pub stress_min_total_r: f64,
+
+    #[arg(long = "stress-min-expectancy", default_value_t = 0.0)]
+    pub stress_min_expectancy: f64,
+
+    #[arg(long = "equity-curves-top-k", default_value_t = 10)]
+    pub equity_curves_top_k: usize,
+
+    #[arg(long = "plot", default_value_t = false)]
+    pub plot: bool,
+
+    #[arg(long = "plot-mode", value_enum, default_value = "individual")]
+    pub plot_mode: PlotModeValue,
+
+    #[arg(long = "max-drawdown")]
+    pub max_drawdown: Option<f64>,
+
+    #[arg(long = "min-calmar")]
+    pub min_calmar: Option<f64>,
+
+    #[arg(long = "asset")]
+    pub asset: Option<String>,
+
+    #[arg(long = "position-sizing", value_enum, default_value = "fractional")]
+    pub position_sizing: PositionSizingValue,
+
+    #[arg(long = "stop-distance-column")]
+    pub stop_distance_column: Option<String>,
+
+    #[arg(long = "stop-distance-unit", value_enum, default_value = "points")]
+    pub stop_distance_unit: StopDistanceUnitValue,
+
+    #[arg(long = "min-contracts", default_value_t = 1)]
+    pub min_contracts: usize,
+
+    #[arg(long = "max-contracts")]
+    pub max_contracts: Option<usize>,
+
+    #[arg(long = "margin-per-contract-dollar")]
+    pub margin_per_contract_dollar: Option<f64>,
+
+    #[arg(long = "commission-per-trade-dollar")]
+    pub commission_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "slippage-per-trade-dollar")]
+    pub slippage_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "cost-per-trade-dollar")]
+    pub cost_per_trade_dollar: Option<f64>,
+
+    #[arg(long = "no-costs", default_value_t = false)]
+    pub no_costs: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -253,6 +662,10 @@ pub struct EvalFormulasArgs {
     /// Selection protocol for choosing formulas after pre/post evaluation.
     #[arg(long = "selection-mode", value_enum, default_value = "holdout-confirm")]
     pub selection_mode: SelectionModeValue,
+
+    /// Optional named gate preset recorded in selection reports.
+    #[arg(long = "selection-preset", value_enum)]
+    pub selection_preset: Option<SelectionPresetValue>,
 
     /// Number of pre-ranked formulas eligible for selection.
     #[arg(long = "candidate-top-k", default_value_t = 1_000)]
@@ -1160,6 +1573,23 @@ impl SelectionModeValue {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum SelectionPresetValue {
+    Exploratory,
+    Institutional,
+    Custom,
+}
+
+impl SelectionPresetValue {
+    pub fn to_preset(self) -> SelectionPreset {
+        match self {
+            Self::Exploratory => SelectionPreset::Exploratory,
+            Self::Institutional => SelectionPreset::Institutional,
+            Self::Custom => SelectionPreset::Custom,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 pub enum ResearchStageValue {
     Discovery,
     Validation,
@@ -1175,6 +1605,22 @@ impl ResearchStageValue {
             Self::Validation => ResearchStage::Validation,
             Self::Lockbox => ResearchStage::Lockbox,
             Self::LiveShadow => ResearchStage::LiveShadow,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum LockboxStageValue {
+    Lockbox,
+    #[value(name = "live-shadow")]
+    LiveShadow,
+}
+
+impl LockboxStageValue {
+    pub fn to_stage_value(self) -> ResearchStageValue {
+        match self {
+            Self::Lockbox => ResearchStageValue::Lockbox,
+            Self::LiveShadow => ResearchStageValue::LiveShadow,
         }
     }
 }

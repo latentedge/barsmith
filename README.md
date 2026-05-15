@@ -39,6 +39,7 @@ Not supported by the default CLI:
 - **Performance-gated evaluator**: inline combination storage, reusable batches, precomputed trade gates, and Rust-native hard-gate benchmarks for the search hot path.
 - **Formula evaluation (`eval-formulas`)**: evaluate ranked formulas on a prepared dataset with the same stacking, sizing, cost, and equity semantics used by Barsmith.
 - **Holdout-aware selection**: default pre-ranked, post-confirmed formula selection with explicit gate artifacts.
+- **Strict selection workflow (`select`)**: one Rust-native path for discovery export, validation, overfit/stress diagnostics, and one-formula lockbox evaluation.
 - **Strict research workflow**: protocol manifests, formula-export provenance, validation/lockbox/live-shadow stages, PBO/CSCV, PSR/DSR, and stress reports for overfit-resistant research.
 - **Resume & durability**: incremental Parquet parts + a DuckDB view for fast `top results` queries.
 - **Rust-native reporting**: query cumulative result stores and export formula results, FRS windows, equity curves, and optional plots without external scripts.
@@ -97,6 +98,7 @@ barsmith_cli --help
 barsmith_cli comb --help
 barsmith_cli eval-formulas --help
 barsmith_cli results --help
+barsmith_cli select --help
 ```
 
 ## Outputs (what gets written)
@@ -160,14 +162,12 @@ post window as confirmation evidence. Selection outputs include
 `selection_report.json`, `selection_decisions.csv`, `selected_formulas.txt`, and
 `reports/selection.md`.
 
-For overfit-resistant research, create `research_protocol.json` with
-`barsmith_cli protocol init`, export formulas from a discovery/pre-only `comb`
-run with `results --export-formulas --research-protocol research_protocol.json`,
-and pass `--strict-protocol --research-protocol research_protocol.json
---formula-export-manifest formula_export_manifest.json` to validation and lockbox
-runs. Strict runs reject stale or unbound manifests and add protocol validation,
-overfit diagnostics, stress diagnostics, and lockbox reports without storing raw
-formulas in Git-safe registry records.
+For overfit-resistant research, prefer `barsmith_cli select validate` and
+`barsmith_cli select lockbox`. The `select` workflow exports discovery
+candidates, binds the formula manifest to a strict protocol, runs validation
+with overfit and stress diagnostics, and records a machine-readable
+`workflow_status`. Low-level `results` and `eval-formulas` remain available for
+diagnostics and custom investigations.
 
 Formula files use one AND-only expression per line, for example:
 
@@ -176,7 +176,8 @@ Rank 1: trend_flag && rsi_7>40.0 && close<high
 Rank 2: atr>=1.25 && volume>volume_sma_20
 ```
 
-See `docs/cli.md` for the complete grammar, FRS options, and plotting flags.
+See `docs/selection.md` for the recommended selection workflow and `docs/cli.md`
+for the complete grammar, FRS options, and plotting flags.
 
 ## How `comb` works
 

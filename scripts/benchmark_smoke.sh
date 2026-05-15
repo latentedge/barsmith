@@ -50,7 +50,7 @@ bench_args=(
 )
 
 case "$SUITE" in
-  all|comb-cli|results-cli|strict-eval|formula-eval)
+  all|comb-cli|results-cli|strict-eval|formula-eval|select-validate|selection-workflow)
     build_args+=(-p barsmith_cli)
     bench_args+=(--barsmith-bin "$CLI_BIN")
     ;;

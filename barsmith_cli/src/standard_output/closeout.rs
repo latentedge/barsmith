@@ -118,6 +118,8 @@ pub fn write_forward_closeout_files(
     let completed_at = now_iso();
     let prepared_sha256 = sha256_file(&args.prepared_path)?;
     let formulas_sha256 = sha256_file(&args.formulas_path)?;
+    let lockbox_attempt_number = lockbox_attempt_number(plan, args, report)?;
+    let workflow_status = workflow_status(report, lockbox_attempt_number);
     let mut closeout_files = written_files.to_vec();
     if let Some(path) = write_forward_selection_markdown(plan, report)? {
         closeout_files.push(path);
@@ -139,10 +141,17 @@ pub fn write_forward_closeout_files(
         &completed_at,
         &prepared_sha256,
         &formulas_sha256,
+        &workflow_status,
     )?;
-    write_forward_summary(plan, args, report, &closeout_files, &completed_at)?;
+    write_forward_summary(
+        plan,
+        args,
+        report,
+        &closeout_files,
+        &completed_at,
+        &workflow_status,
+    )?;
     let checksums = write_forward_checksums(plan, &closeout_files)?;
-    let lockbox_attempt_number = lockbox_attempt_number(plan, args, report)?;
 
     if let Some(registry_dir) = &plan.registry_dir {
         fs::create_dir_all(registry_dir)
@@ -205,6 +214,7 @@ pub fn write_forward_closeout_files(
                     .and_then(|selection| selection.diagnostic_top_post.as_ref())
                     .map(|diagnostic| sha256_text(&diagnostic.formula)),
                 stage: report.stage,
+                workflow_status: workflow_status.clone(),
                 strict_protocol: report
                     .strict_protocol
                     .as_ref()
@@ -253,6 +263,7 @@ fn write_forward_manifest(
     completed_at: &str,
     prepared_sha256: &str,
     formulas_sha256: &str,
+    workflow_status: &str,
 ) -> Result<()> {
     let manifest = ForwardManifest {
         schema_version: REGISTRY_SCHEMA_VERSION,
@@ -279,6 +290,7 @@ fn write_forward_manifest(
         plot_enabled: args.plot,
         plot_mode: format!("{:?}", args.plot_mode),
         stage: report.stage,
+        workflow_status: workflow_status.to_string(),
         strict_protocol: report
             .strict_protocol
             .as_ref()
@@ -526,4 +538,31 @@ fn lockbox_status(
         Some(_) => "acknowledged_rerun_contaminated".to_string(),
         None => "not_tracked_no_registry".to_string(),
     })
+}
+
+fn workflow_status(
+    report: &FormulaEvaluationReport,
+    lockbox_attempt_number: Option<usize>,
+) -> String {
+    if report.stage.is_lockbox_like() {
+        if lockbox_attempt_number.is_some_and(|attempt| attempt > 1) {
+            return "lockbox-contaminated-rerun".to_string();
+        }
+        return if !report.post.results.is_empty() {
+            "lockbox-pass".to_string()
+        } else {
+            "lockbox-fail".to_string()
+        };
+    }
+
+    if report
+        .selection
+        .as_ref()
+        .and_then(|selection| selection.selected.as_ref())
+        .is_some()
+    {
+        "validation-selected-for-lockbox".to_string()
+    } else {
+        "validation-rejected".to_string()
+    }
 }

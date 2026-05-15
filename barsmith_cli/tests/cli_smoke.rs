@@ -508,11 +508,480 @@ fn cli_eval_formulas_strict_protocol_writes_overfit_and_stress_reports() {
     )
     .expect("registry");
     assert!(registry.contains("\"protocol_sha256\""));
+    assert!(registry.contains("\"workflow_status\""));
     assert!(registry.contains("\"overfit_status\""));
     assert!(registry.contains("\"stress_status\""));
     let stress_matrix =
         std::fs::read_to_string(output_dir.join("stress_matrix.csv")).expect("stress matrix");
     assert!(stress_matrix.contains("half_max_contracts"));
+}
+
+#[test]
+fn cli_select_explain_prints_protocol_summary() {
+    let temp_dir = tempdir().expect("temp run root");
+    let protocol = temp_dir.path().join("research_protocol.json");
+    write_next_bar_protocol(&protocol, "select-explain-smoke");
+
+    let mut cmd = barsmith_cmd();
+    let output = cmd
+        .args([
+            "select",
+            "explain",
+            "--protocol",
+            protocol.to_str().expect("protocol"),
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to spawn select explain");
+
+    assert!(output.status.success(), "select explain exited {output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Barsmith strict selection workflow"),
+        "unexpected select explain stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("Protocol SHA-256"),
+        "select explain should include protocol hash: {stdout}"
+    );
+}
+
+#[test]
+fn cli_select_validate_exports_and_runs_strict_workflow() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("ohlcv_tiny.csv");
+    let temp_dir = tempdir().expect("temp run root");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let source_output = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("select_source")
+        .join("discovery");
+
+    let mut comb_cmd = barsmith_cmd();
+    let comb_status = comb_cmd
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "long",
+            "--target",
+            "next_bar_color_and_wicks",
+            "--position-sizing",
+            "fractional",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select source",
+            "--run-id",
+            "discovery",
+            "--max-depth",
+            "2",
+            "--min-samples",
+            "1",
+            "--date-end",
+            "2024-02-29",
+            "--batch-size",
+            "100",
+            "--workers",
+            "1",
+            "--max-combos",
+            "500",
+            "--stats-detail",
+            "core",
+            "--report",
+            "off",
+            "--force",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn comb for select validate");
+    assert!(comb_status.success(), "comb exited with {comb_status:?}");
+
+    let protocol = temp_dir.path().join("research_protocol.json");
+    write_next_bar_protocol(&protocol, "select-validate-smoke");
+    let prepared = source_output.join("barsmith_prepared.csv");
+
+    let mut select_cmd = barsmith_cmd();
+    let status = select_cmd
+        .args([
+            "select",
+            "validate",
+            "--source-output-dir",
+            source_output.to_str().expect("source"),
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--target",
+            "next_bar_color_and_wicks",
+            "--direction",
+            "long",
+            "--cutoff",
+            "2024-02-29",
+            "--research-protocol",
+            protocol.to_str().expect("protocol"),
+            "--preset",
+            "exploratory",
+            "--candidate-top-k",
+            "3",
+            "--min-samples",
+            "1",
+            "--pre-min-trades",
+            "1",
+            "--post-min-trades",
+            "0",
+            "--post-warn-below-trades",
+            "0",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select source",
+            "--run-id",
+            "select validation",
+            "--no-file-log",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn select validate");
+    assert!(status.success(), "select validate exited with {status:?}");
+
+    let output_dir = runs_root
+        .join("forward-test")
+        .join("next_bar_color_and_wicks")
+        .join("select_source")
+        .join("2024-02-29")
+        .join("select_validation");
+    for path in [
+        output_dir.join("candidate_formulas.txt"),
+        output_dir.join("formula_export_manifest.json"),
+        output_dir.join("selection_report.json"),
+        output_dir.join("overfit_report.json"),
+        output_dir.join("stress_report.json"),
+        output_dir.join("reports").join("selection.md"),
+        output_dir.join("reports").join("summary.md"),
+    ] {
+        assert!(path.exists(), "expected {}", path.display());
+    }
+    let manifest =
+        std::fs::read_to_string(output_dir.join("formula_export_manifest.json")).expect("manifest");
+    assert!(
+        manifest.contains("\"source_processed_combinations\""),
+        "manifest should include source search accounting: {manifest}"
+    );
+    let registry = std::fs::read_to_string(
+        registry_dir
+            .join("forward-test")
+            .join("next_bar_color_and_wicks")
+            .join("select_source")
+            .join("2024-02-29")
+            .join("select_validation.json"),
+    )
+    .expect("registry");
+    assert!(registry.contains("\"workflow_status\""));
+}
+
+#[test]
+fn cli_select_validate_dry_run_writes_no_artifacts() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("ohlcv_tiny.csv");
+    let temp_dir = tempdir().expect("temp run root");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let source_output = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("select_dry_source")
+        .join("discovery");
+
+    let mut comb_cmd = barsmith_cmd();
+    let comb_status = comb_cmd
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "long",
+            "--target",
+            "next_bar_color_and_wicks",
+            "--position-sizing",
+            "fractional",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select dry source",
+            "--run-id",
+            "discovery",
+            "--max-depth",
+            "2",
+            "--min-samples",
+            "1",
+            "--date-end",
+            "2024-02-29",
+            "--batch-size",
+            "100",
+            "--workers",
+            "1",
+            "--max-combos",
+            "100",
+            "--stats-detail",
+            "core",
+            "--report",
+            "off",
+            "--force",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn comb for select dry-run");
+    assert!(comb_status.success(), "comb exited with {comb_status:?}");
+
+    let protocol = temp_dir.path().join("research_protocol.json");
+    write_next_bar_protocol(&protocol, "select-dry-run-smoke");
+    let prepared = source_output.join("barsmith_prepared.csv");
+
+    let mut select_cmd = barsmith_cmd();
+    let output = select_cmd
+        .args([
+            "select",
+            "validate",
+            "--source-output-dir",
+            source_output.to_str().expect("source"),
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--target",
+            "next_bar_color_and_wicks",
+            "--direction",
+            "long",
+            "--cutoff",
+            "2024-02-29",
+            "--research-protocol",
+            protocol.to_str().expect("protocol"),
+            "--preset",
+            "exploratory",
+            "--candidate-top-k",
+            "3",
+            "--min-samples",
+            "1",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select dry source",
+            "--run-id",
+            "select dry validation",
+            "--dry-run",
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to spawn select dry-run");
+    assert!(
+        output.status.success(),
+        "select dry-run exited with {:?}",
+        output.status
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Dry run wrote no evaluation artifacts."),
+        "unexpected dry-run stdout: {stdout}"
+    );
+    let output_dir = runs_root
+        .join("forward-test")
+        .join("next_bar_color_and_wicks")
+        .join("select_dry_source")
+        .join("2024-02-29")
+        .join("select_dry_validation");
+    assert!(
+        !output_dir.exists(),
+        "dry run should not create {}",
+        output_dir.display()
+    );
+}
+
+#[test]
+fn cli_select_validate_rejects_post_discovery_source_before_artifacts() {
+    let sample_csv = workspace_root()
+        .join("tests")
+        .join("data")
+        .join("ohlcv_tiny.csv");
+    let temp_dir = tempdir().expect("temp run root");
+    let runs_root = temp_dir.path().join("artifacts");
+    let registry_dir = temp_dir.path().join("registry");
+    let source_output = runs_root
+        .join("comb")
+        .join("next_bar_color_and_wicks")
+        .join("long")
+        .join("select_leaky_source")
+        .join("discovery");
+
+    let mut comb_cmd = barsmith_cmd();
+    let comb_status = comb_cmd
+        .args([
+            "comb",
+            "--csv",
+            sample_csv.to_str().expect("sample"),
+            "--direction",
+            "long",
+            "--target",
+            "next_bar_color_and_wicks",
+            "--position-sizing",
+            "fractional",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select leaky source",
+            "--run-id",
+            "discovery",
+            "--max-depth",
+            "2",
+            "--min-samples",
+            "1",
+            "--date-end",
+            "2024-03-31",
+            "--batch-size",
+            "100",
+            "--workers",
+            "1",
+            "--max-combos",
+            "100",
+            "--stats-detail",
+            "core",
+            "--report",
+            "off",
+            "--force",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to spawn comb for leaky select source");
+    assert!(comb_status.success(), "comb exited with {comb_status:?}");
+
+    let protocol = temp_dir.path().join("research_protocol.json");
+    write_next_bar_protocol(&protocol, "select-rejects-leaky-source");
+    let prepared = source_output.join("barsmith_prepared.csv");
+
+    let mut select_cmd = barsmith_cmd();
+    let output = select_cmd
+        .args([
+            "select",
+            "validate",
+            "--source-output-dir",
+            source_output.to_str().expect("source"),
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--target",
+            "next_bar_color_and_wicks",
+            "--direction",
+            "long",
+            "--cutoff",
+            "2024-02-29",
+            "--research-protocol",
+            protocol.to_str().expect("protocol"),
+            "--preset",
+            "exploratory",
+            "--candidate-top-k",
+            "3",
+            "--min-samples",
+            "1",
+            "--runs-root",
+            runs_root.to_str().expect("runs root"),
+            "--registry-dir",
+            registry_dir.to_str().expect("registry"),
+            "--dataset-id",
+            "select leaky source",
+            "--run-id",
+            "select validation",
+            "--no-file-log",
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to spawn select validate for leaky source");
+
+    assert!(
+        !output.status.success(),
+        "select validate should reject a source run that reaches validation rows"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("after protocol discovery end"),
+        "unexpected leaky-source stderr: {stderr}"
+    );
+    let output_dir = runs_root
+        .join("forward-test")
+        .join("next_bar_color_and_wicks")
+        .join("select_leaky_source")
+        .join("2024-02-29")
+        .join("select_validation");
+    assert!(
+        !output_dir.exists(),
+        "rejected source should not create validation artifacts at {}",
+        output_dir.display()
+    );
+}
+
+#[test]
+fn cli_select_lockbox_rejects_multi_formula_files() {
+    let temp_dir = tempdir().expect("temp run root");
+    let prepared = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_prepared.csv");
+    let formulas = workspace_root()
+        .join("barsmith_rs")
+        .join("tests")
+        .join("fixtures")
+        .join("formula_eval_formulas.txt");
+    let protocol = temp_dir.path().join("research_protocol.json");
+    let formula_manifest = temp_dir.path().join("formula_export_manifest.json");
+    write_strict_formula_eval_protocol_and_manifest(&protocol, &formula_manifest);
+
+    let mut cmd = barsmith_cmd();
+    let output = cmd
+        .args([
+            "select",
+            "lockbox",
+            "--prepared",
+            prepared.to_str().expect("prepared"),
+            "--formulas",
+            formulas.to_str().expect("formulas"),
+            "--target",
+            "2x_atr_tp_atr_stop",
+            "--cutoff",
+            "2025-01-03",
+            "--research-protocol",
+            protocol.to_str().expect("protocol"),
+            "--formula-export-manifest",
+            formula_manifest.to_str().expect("manifest"),
+            "--run-id",
+            "select_lockbox_rejects_multi_formula_files",
+        ])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to spawn select lockbox");
+
+    assert!(
+        !output.status.success(),
+        "select lockbox should reject multi-formula files"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("requires exactly one frozen formula"),
+        "unexpected select lockbox stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -557,6 +1026,86 @@ fn cli_eval_formulas_lockbox_rejects_multi_formula_files() {
         stderr.contains("requires exactly one frozen formula"),
         "unexpected lockbox stderr: {stderr}"
     );
+}
+
+fn write_next_bar_protocol(path: &Path, protocol_id: &str) {
+    std::fs::write(
+        path,
+        format!(
+            r#"{{
+  "schema_version": 1,
+  "protocol_id": "{protocol_id}",
+  "dataset_id": "select_source",
+  "target": "next_bar_color_and_wicks",
+  "direction": "long",
+  "engine": "builtin",
+  "strict": true,
+  "discovery": {{"start": "2024-01-01", "end": "2024-02-29"}},
+  "validation": {{"start": "2024-03-01", "end": "2024-03-31"}},
+  "lockbox": {{"start": "2024-04-01", "end": "2024-04-14"}},
+  "live_shadow_min_days": 30,
+  "live_shadow_min_trades": 100,
+  "candidate_top_k": 3,
+  "notes": []
+}}"#
+        ),
+    )
+    .expect("next-bar protocol");
+}
+
+fn write_strict_formula_eval_protocol_and_manifest(protocol: &Path, manifest: &Path) {
+    std::fs::write(
+        protocol,
+        r#"{
+  "schema_version": 1,
+  "protocol_id": "select-lockbox-smoke",
+  "dataset_id": "tiny_forward",
+  "target": "2x_atr_tp_atr_stop",
+  "direction": "long",
+  "engine": "custom",
+  "strict": true,
+  "discovery": {"start": "2024-12-29", "end": "2024-12-31"},
+  "validation": {"start": "2025-01-01", "end": "2025-01-03"},
+  "lockbox": {"start": "2025-01-04", "end": "2025-01-05"},
+  "live_shadow_min_days": 30,
+  "live_shadow_min_trades": 100,
+  "candidate_top_k": 3,
+  "notes": []
+}"#,
+    )
+    .expect("protocol");
+    let protocol_hash = load_json::<ResearchProtocol>(protocol)
+        .expect("load protocol")
+        .hash()
+        .expect("protocol hash");
+    std::fs::write(
+        manifest,
+        format!(
+            r#"{{
+  "schema_version": 2,
+  "created_at": "2026-05-15T00:00:00Z",
+  "source_output_dir_path_sha256": "source",
+  "source_run_manifest_sha256": null,
+  "source_run_identity_hash": null,
+  "source_date_start": "2024-12-29",
+  "source_date_end": "2024-12-31",
+  "target": "2x_atr_tp_atr_stop",
+  "direction": "long",
+  "rank_by": "total-return",
+  "min_sample_size": 1,
+  "min_win_rate": 0.0,
+  "max_drawdown": 1000.0,
+  "min_calmar": null,
+  "requested_limit": 3,
+  "exported_rows": 3,
+  "source_processed_combinations": 100,
+  "source_stored_combinations": 10,
+  "formulas_sha256": "fixture",
+  "protocol_sha256": "{protocol_hash}"
+}}"#
+        ),
+    )
+    .expect("formula manifest");
 }
 
 #[test]

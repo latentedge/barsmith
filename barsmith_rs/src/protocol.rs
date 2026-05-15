@@ -144,6 +144,8 @@ pub struct FormulaExportManifest {
     pub min_calmar: Option<f64>,
     pub requested_limit: usize,
     pub exported_rows: usize,
+    pub source_processed_combinations: Option<u64>,
+    pub source_stored_combinations: Option<u64>,
     pub formulas_sha256: String,
     pub protocol_sha256: Option<String>,
 }
@@ -164,6 +166,8 @@ pub struct FormulaExportManifestDraft {
     pub min_calmar: Option<f64>,
     pub requested_limit: usize,
     pub exported_rows: usize,
+    pub source_processed_combinations: Option<u64>,
+    pub source_stored_combinations: Option<u64>,
     pub formulas_sha256: String,
     pub protocol_sha256: Option<String>,
 }
@@ -187,6 +191,8 @@ impl FormulaExportManifest {
             min_calmar: draft.min_calmar,
             requested_limit: draft.requested_limit,
             exported_rows: draft.exported_rows,
+            source_processed_combinations: draft.source_processed_combinations,
+            source_stored_combinations: draft.source_stored_combinations,
             formulas_sha256: draft.formulas_sha256,
             protocol_sha256: draft.protocol_sha256,
         }
@@ -527,6 +533,8 @@ mod tests {
             min_calmar: None,
             requested_limit: 100,
             exported_rows: 10,
+            source_processed_combinations: None,
+            source_stored_combinations: None,
             formulas_sha256: "formulas".to_string(),
             protocol_sha256: None,
         })

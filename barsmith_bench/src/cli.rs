@@ -23,7 +23,8 @@ pub enum Command {
 #[derive(Args, Debug, Clone)]
 pub struct RunArgs {
     /// Suite to run: smoke, all, combinator, comb-eval, comb-depth5,
-    /// target-generation, bitset, stats, comb-cli, results-cli, or strict-eval.
+    /// target-generation, bitset, stats, comb-cli, results-cli,
+    /// strict-eval, or select-validate.
     /// target-generation requires --features target-generation.
     #[arg(long = "suite", default_value = "smoke")]
     pub suite: String,

@@ -40,6 +40,7 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Moved the larger CLI dry-run parity test into the CLI test package to avoid nested `cargo run` rebuilds from `custom_rs` tests.
 - Hardened several non-hot-path runtime boundaries by returning contextual errors for writer/subset-saver thread failures and removing avoidable unwraps from storage, subset-cache decoding, and finite-float sorting helpers.
 - Added targeted `comb-depth5` and `target-generation` benchmark suites, depth-5 SIMD scan dispatch, fixed-depth scalar bitset coverage, small-mask support sorting, and target-generation parity tests for performance-sensitive refactors.
+- Added the strict `select validate`, `select lockbox`, and `select explain` workflow for protocol-bound formula selection, including institutional/exploratory presets, source search accounting, workflow statuses, docs, smoke tests, and a review-only `select-validate` benchmark suite.
 
 ## 0.1.0
 

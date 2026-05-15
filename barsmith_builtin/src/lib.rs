@@ -374,8 +374,8 @@ impl FeatureCatalog {
                 if !threshold.is_finite() {
                     continue;
                 }
-                let name = format!("{base}>{label}");
-                let note = format!("{base} greater than {label}");
+                let name = format!("{base}>{}", format_threshold(threshold));
+                let note = format!("{base} greater than {label} ({threshold})");
                 descriptors.push(FeatureDescriptor::feature_vs_constant(name.clone(), note));
                 specs.insert(
                     name,
@@ -407,6 +407,17 @@ impl FeatureCatalog {
             comparison_specs: specs,
         })
     }
+}
+
+fn format_threshold(value: f64) -> String {
+    let mut text = format!("{value:.12}");
+    while text.contains('.') && text.ends_with('0') {
+        text.pop();
+    }
+    if text.ends_with('.') {
+        text.pop();
+    }
+    text
 }
 
 pub fn run_builtin_pipeline_with_options(

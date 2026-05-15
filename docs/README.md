@@ -6,7 +6,8 @@ Barsmith is currently marked **unstable**. Expect breaking changes.
 
 - `docs/quickstart.md` — install + first run (uses `tests/data/ohlcv_tiny.csv`)
 - `docs/data-contract.md` — raw CSV + prepared dataset contract
-- `docs/cli.md` — CLI flags and practical guidance for `comb`, `eval-formulas`, and `results`
+- `docs/cli.md` — CLI flags and practical guidance for `comb`, `eval-formulas`, `results`, and `select`
+- `docs/selection.md` — strict choose-the-best workflow after discovery runs
 - `docs/research-protocol.md` — pre/post selection protocol, holdout confirmation, and overfit controls
 - `docs/runs.md` — running long experiments (resume, standard run folders, batching)
 - `docs/outputs.md` — what gets written + how to query results (DuckDB/Parquet)

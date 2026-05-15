@@ -5,6 +5,7 @@ Barsmith’s default CLI is `barsmith_cli`. The supported workflows are Rust-nat
 - `comb`: generate an engineered dataset and evaluate feature combinations.
 - `eval-formulas`: evaluate a ranked formula file against an existing `barsmith_prepared.csv`.
 - `results`: query a cumulative Barsmith run folder without opening DuckDB manually.
+- `select`: strict workflow for discovery export, validation, and lockbox evidence.
 
 ## Help
 
@@ -13,6 +14,7 @@ barsmith_cli --help
 barsmith_cli comb --help
 barsmith_cli eval-formulas --help
 barsmith_cli results --help
+barsmith_cli select --help
 ```
 
 ## `comb`
@@ -214,7 +216,7 @@ override them explicitly:
 
 Contract sizing requires `--asset` and a stop-distance column. ATR-stop targets infer `--stop-distance-column atr`; other targets must provide the column explicitly.
 
-See `docs/research-protocol.md` for the recommended pre/post selection workflow and lockbox guidance.
+See `docs/selection.md` and `docs/research-protocol.md` for the recommended pre/post selection workflow and lockbox guidance.
 
 ## `results`
 
@@ -236,6 +238,51 @@ This command reads `cumulative.duckdb` plus `results_parquet/` and prints the to
 Use `--export-formulas <FILE>` to write the query result as a ranked formula file that can be passed directly to `eval-formulas`. For holdout-safe research, export from a `comb` run that only searched the discovery/pre window. Formula exports include comment metadata and a research note; the formula parser ignores those comments. The command also writes `formula_export_manifest.json` by default, or the path passed to `--export-formula-manifest`. Manifest schema version `2` uses `source_output_dir_path_sha256` for the source path fingerprint.
 
 Pass `--research-protocol <FILE>` when exporting formulas for strict validation. Strict `eval-formulas` requires the manifest `protocol_sha256` to match the research protocol used for validation or lockbox evaluation.
+
+## `select`
+
+Use `select` for the recommended choose-the-best workflow.
+
+```bash
+barsmith_cli select explain \
+  --protocol research_protocol.json
+```
+
+```bash
+barsmith_cli select validate \
+  --source-output-dir runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v1/pre_2024_12_31_refactor \
+  --prepared runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v1/full_prepared/barsmith_prepared.csv \
+  --target 2x_atr_tp_atr_stop \
+  --direction long \
+  --cutoff 2024-12-31 \
+  --research-protocol research_protocol.json \
+  --dataset-id es_30m_official_v1 \
+  --run-id validation_2024_12_31
+```
+
+`select validate` requires a strict protocol and a discovery/pre-only source
+comb folder. It exports candidates into the validation run folder, writes a
+formula manifest, runs strict validation, and enables overfit and stress reports
+by default. The source comb run must include `date_end` metadata and cannot end
+after the protocol discovery window; invalid source runs fail before candidate
+artifacts are written. Use `--dry-run` to verify planned paths and source-window
+metadata without writing evaluation artifacts.
+
+```bash
+barsmith_cli select lockbox \
+  --prepared runs/artifacts/comb/2x_atr_tp_atr_stop/long/es_30m_official_v1/full_prepared/barsmith_prepared.csv \
+  --formulas runs/artifacts/forward-test/2x_atr_tp_atr_stop/es_30m_official_v1/2024-12-31/validation_2024_12_31/selected_formulas.txt \
+  --target 2x_atr_tp_atr_stop \
+  --cutoff 2025-06-30 \
+  --research-protocol research_protocol.json \
+  --formula-export-manifest runs/artifacts/forward-test/2x_atr_tp_atr_stop/es_30m_official_v1/2024-12-31/validation_2024_12_31/formula_export_manifest.json \
+  --dataset-id es_30m_official_v1 \
+  --run-id lockbox_2025_06_30
+```
+
+`select lockbox` accepts exactly one frozen formula. Re-running the same
+formula/protocol requires `--ack-rerun-lockbox` and records contaminated rerun
+evidence.
 
 ## `protocol`
 
