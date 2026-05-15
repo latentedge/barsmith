@@ -6,6 +6,7 @@ SUITE="${BARSMITH_PERF_SUITE:-smoke}"
 SAMPLES="${BARSMITH_PERF_SAMPLES:-21}"
 WARMUPS="${BARSMITH_PERF_WARMUPS:-2}"
 REPORT="${BARSMITH_PERF_REPORT:-target/barsmith-bench/performance-gate.json}"
+DEFAULT_BASELINE="target/barsmith-bench/baseline.json"
 BASELINE="${BARSMITH_PERF_BASELINE:-}"
 COMPARISON="${BARSMITH_PERF_COMPARISON:-target/barsmith-bench/performance-gate-comparison.json}"
 COMPARISON_MD="${BARSMITH_PERF_COMPARISON_MD:-target/barsmith-bench/performance-gate-comparison.md}"
@@ -28,6 +29,17 @@ if [[ ! -f "$CSV" ]]; then
   echo "Benchmark CSV not found: $CSV" >&2
   exit 1
 fi
+
+case "$BASELINE" in
+  "" )
+    if [[ -f "$DEFAULT_BASELINE" ]]; then
+      BASELINE="$DEFAULT_BASELINE"
+    fi
+    ;;
+  none|off|false|0 )
+    BASELINE=""
+    ;;
+esac
 
 mkdir -p "$(dirname "$REPORT")"
 rm -rf "$OUT_DIR"
@@ -92,5 +104,5 @@ if [[ -n "$BASELINE" ]]; then
   echo "Performance comparison written: $COMPARISON"
   echo "Performance comparison markdown written: $COMPARISON_MD"
 else
-  echo "Performance gate run complete. Set BARSMITH_PERF_BASELINE to enforce a same-machine comparison."
+  echo "Performance gate run complete. Create $DEFAULT_BASELINE or set BARSMITH_PERF_BASELINE to enforce a same-machine comparison."
 fi

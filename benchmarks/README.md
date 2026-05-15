@@ -56,11 +56,16 @@ target/release/barsmith_bench run \
 Compare a candidate to a same-machine baseline:
 
 ```bash
-BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json scripts/performance_gate.sh
-BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
-  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+BARSMITH_PERF_BASELINE=off \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json \
   scripts/performance_gate.sh
+BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate.sh
 ```
+
+`scripts/performance_gate.sh` automatically uses
+`target/barsmith-bench/baseline.json` when that file exists. Set
+`BARSMITH_PERF_BASELINE=off` only when intentionally creating or refreshing the
+accepted local baseline after a main-branch change has been reviewed.
 
 Keep generated reports under `target/barsmith-bench/**` or another ignored path unless you are intentionally attaching a sanitized artifact to a review.
 

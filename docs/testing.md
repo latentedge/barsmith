@@ -88,11 +88,14 @@ better signal for hot-path regressions.
 For hot-path work, capture a same-machine baseline and compare explicitly:
 
 ```bash
-BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json scripts/performance_gate.sh
-BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
-  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+BARSMITH_PERF_BASELINE=off \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json \
   scripts/performance_gate.sh
+BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate.sh
 ```
+
+The wrapper automatically compares against
+`target/barsmith-bench/baseline.json` when that file exists.
 
 The comparison gate fails on hard-gate median regressions, p95 regressions corroborated by mean regression, and missing hard-gate benchmarks. p95-only spikes and end-to-end CLI benchmark regressions are review-only because they are noisier, but they still need an explicit accept/reject note.
 

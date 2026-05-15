@@ -141,9 +141,10 @@ BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate
 Compare two reports:
 
 ```bash
-BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json \
-  BARSMITH_PERF_REPORT=target/barsmith-bench/current.json \
+BARSMITH_PERF_BASELINE=off \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json \
   scripts/performance_gate.sh
+BARSMITH_PERF_REPORT=target/barsmith-bench/current.json scripts/performance_gate.sh
 ```
 
 The JSON report records git SHA, dirty state, Rust version, target triple, OS/arch, CPU model, Cargo profile label, fixture hashes, samples, median, p95, min, max, mean, standard deviation, regression policy, and benchmark status.
@@ -159,8 +160,11 @@ scripts/performance_gate.sh
 ```
 
 Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to enforce a
-same-machine comparison with `--fail-on-regression`. Without a baseline, the
-script writes the current report only.
+same-machine comparison with `--fail-on-regression`, or rely on the wrapper's
+default: it automatically uses `target/barsmith-bench/baseline.json` when that
+file exists. Set `BARSMITH_PERF_BASELINE=off` only when intentionally creating
+or refreshing the accepted local baseline. Without a baseline file, the script
+writes the current report only.
 
 ## Local smoke benchmark
 

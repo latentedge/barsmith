@@ -332,9 +332,16 @@ Use the Rust-native benchmark gate for performance-sensitive changes:
 scripts/performance_gate.sh
 ```
 
-Set `BARSMITH_PERF_BASELINE=target/barsmith-bench/baseline.json` to make the
-gate compare against a same-machine baseline with
-`barsmith_bench compare --fail-on-regression`.
+When `target/barsmith-bench/baseline.json` exists, the gate compares against it
+with `barsmith_bench compare --fail-on-regression`. Refresh that local baseline
+only after an accepted main-branch change:
+
+```bash
+BARSMITH_PERF_BASELINE=off \
+  BARSMITH_PERF_REPORT=target/barsmith-bench/baseline.json \
+  scripts/performance_gate.sh
+```
+
 The `smoke` benchmark suite covers combination enumeration, the synthetic `comb-eval` hot path, bitset scans, and core stats. For max-depth-5 refactors, also run `--suite comb-depth5`. For ATR target-generation refactors, build the benchmark runner with `--features target-generation` and run `--suite target-generation` before validating a larger local CLI profile.
 
 Performance depends heavily on:
